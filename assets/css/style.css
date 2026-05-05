@@ -1,0 +1,299 @@
+/* ===============================
+   WOWASCO SYSTEM MASTER STYLES
+   Enterprise Utility Dashboard UI
+================================= */
+
+/* RESET */
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:'Segoe UI', sans-serif;
+}
+
+body{
+    background:#eef3f8;
+    color:#1f2937;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+/* ================= SIDEBAR (SAFE DEFAULT) ================= */
+.sidebar{
+    width:260px;
+    height:100vh;
+    background:#0a2a43;
+    color:white;
+    position:fixed;
+    top:0;
+    left:0;
+    overflow-y:auto;
+    padding-top:20px;
+}
+
+.sidebar a{
+    display:block;
+    padding:12px 18px;
+    color:#cbd5e1;
+    text-decoration:none;
+    transition:0.3s;
+    font-size:14px;
+}
+
+.sidebar a:hover{
+    background:#123a5a;
+    color:#fff;
+}
+
+/* ================= MAIN CONTENT ================= */
+.container{
+    margin-left:270px;
+    padding:20px;
+}
+
+/* ================= HEADER ================= */
+.header, .report-header{
+    margin-bottom:15px;
+}
+
+.header h2,
+.report-header h2{
+    color:#0f172a;
+    font-weight:600;
+}
+
+/* ================= CARDS / PANELS ================= */
+.card,
+.controls,
+.summary,
+.panel{
+    background:white;
+    padding:18px;
+    border-radius:10px;
+    box-shadow:0 4px 12px rgba(0,0,0,0.05);
+    margin-bottom:15px;
+}
+
+/* ================= FORMS ================= */
+.form-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:12px;
+    align-items:center;
+}
+
+input,
+select,
+textarea{
+    padding:10px 12px;
+    border:1px solid #d1d5db;
+    border-radius:8px;
+    background:#f9fbfd;
+    font-size:14px;
+    min-width:180px;
+}
+
+input:focus,
+select:focus,
+textarea:focus{
+    outline:none;
+    border-color:#2563eb;
+    background:white;
+}
+
+/* ================= BUTTONS ================= */
+button,
+.btn{
+    background:#2563eb;
+    color:white;
+    border:none;
+    padding:10px 14px;
+    border-radius:8px;
+    cursor:pointer;
+    font-size:14px;
+    transition:0.2s;
+}
+
+button:hover,
+.btn:hover{
+    background:#1d4ed8;
+}
+
+.btn-green{
+    background:#16a34a;
+}
+
+.btn-green:hover{
+    background:#15803d;
+}
+
+.btn-yellow{
+    background:#f59e0b;
+    color:#111;
+}
+
+.btn-yellow:hover{
+    background:#d97706;
+}
+
+/* ================= TABLES ================= */
+.table-wrapper{
+    background:white;
+    border-radius:10px;
+    overflow:hidden;
+    box-shadow:0 4px 12px rgba(0,0,0,0.05);
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+}
+
+th{
+    background:#0a2a43;
+    color:white;
+    padding:12px;
+    font-size:13px;
+    text-align:left;
+}
+
+td{
+    padding:12px;
+    border-bottom:1px solid #eee;
+    font-size:13px;
+}
+
+tr:hover{
+    background:#f5f9ff;
+}
+
+/* ================= STATUS BADGES ================= */
+.badge{
+    padding:5px 10px;
+    border-radius:20px;
+    font-size:12px;
+    font-weight:500;
+}
+
+.active{
+    background:#dcfce7;
+    color:#166534;
+}
+
+.inactive{
+    background:#fee2e2;
+    color:#991b1b;
+}
+
+/* ================= SUMMARY BAR ================= */
+.summary{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-weight:500;
+}
+
+/* ================= DROPDOWN (3 DOTS MENU) ================= */
+.menu{
+    position:relative;
+    display:inline-block;
+}
+
+.menu button{
+    background:none;
+    border:none;
+    font-size:18px;
+    cursor:pointer;
+}
+
+.dropdown{
+    display:none;
+    position:absolute;
+    right:0;
+    top:25px;
+    background:white;
+    min-width:150px;
+    box-shadow:0 10px 20px rgba(0,0,0,0.15);
+    border-radius:8px;
+    z-index:9999;
+}
+
+.menu:hover .dropdown{
+    display:block;
+}
+
+.dropdown a{
+    display:block;
+    padding:10px;
+    text-decoration:none;
+    color:#333;
+    font-size:13px;
+}
+
+.dropdown a:hover{
+    background:#f1f5ff;
+}
+
+/* ================= POPUPS ================= */
+.popup{
+    position:fixed;
+    top:20px;
+    right:20px;
+    padding:10px 16px;
+    border-radius:6px;
+    color:white;
+    font-size:13px;
+    z-index:9999;
+}
+
+.success{background:#16a34a;}
+.error{background:#dc2626;}
+
+/* ================= BACK BUTTON ================= */
+.back-btn{
+    display:inline-block;
+    margin-top:15px;
+    padding:10px 14px;
+    background:#6b7280;
+    color:white;
+    border-radius:8px;
+    text-decoration:none;
+}
+
+.back-btn:hover{
+    background:#4b5563;
+}
+
+/* ================= PRINT ================= */
+@media print{
+    .sidebar,
+    .back-btn,
+    button,
+    .menu,
+    .controls{
+        display:none !important;
+    }
+
+    body{
+        background:white;
+    }
+
+    .container{
+        margin:0;
+        width:100%;
+    }
+}
+
+/* ================= RESPONSIVE ================= */
+@media(max-width:1024px){
+    .container{
+        margin-left:0;
+    }
+
+    .form-row{
+        flex-direction:column;
+        align-items:stretch;
+    }
+}
