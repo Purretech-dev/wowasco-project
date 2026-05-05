@@ -47,6 +47,7 @@ $allowed_pages = [
 
     // REPORTS
     'modules/reports/advanced_reports.php',
+    'modules/reports/custom_reports.php',
 ];
 
 /* =========================

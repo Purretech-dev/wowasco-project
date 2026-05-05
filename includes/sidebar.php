@@ -1,21 +1,27 @@
 <style>
 /* =========================
-   WOWASCO SIDEBAR UI (COMPACT ENTERPRISE)
+   WOWASCO SIDEBAR UI (FIXED SCROLL + STABLE TOGGLE)
 ========================= */
 
 .sidebar{
     position:fixed;
     width:235px;
-    height:calc(100vh - 10px);
-    background:#0a2a43;
-    left:5px;
     top:5px;
     bottom:5px;
+    background:#0a2a43;
+    left:5px;
     overflow-y:auto;
+    overflow-x:hidden;
     padding:12px 8px;
+    padding-bottom:60px;
     box-shadow:2px 0 12px rgba(0,0,0,0.15);
     z-index:1000;
     border-radius:10px;
+    scroll-behavior:smooth;
+}
+
+.sidebar * {
+    box-sizing:border-box;
 }
 
 .brand{
@@ -88,10 +94,16 @@
     font-weight:500;
 }
 
+/* ✅ CONTROLLED TOGGLE SYSTEM */
 .submenu{
     margin-left:8px;
     padding-left:8px;
     border-left:2px solid #1f3b57;
+    display:none;
+}
+
+.submenu.open{
+    display:block;
 }
 
 .submenu a{
@@ -109,13 +121,16 @@
     color:#111;
 }
 
+/* SCROLLBAR */
 .sidebar::-webkit-scrollbar{
-    width:5px;
+    width:6px;
 }
-
 .sidebar::-webkit-scrollbar-thumb{
     background:#2563eb;
     border-radius:10px;
+}
+.sidebar::-webkit-scrollbar-track{
+    background:transparent;
 }
 </style>
 
@@ -150,168 +165,111 @@
     ?>
 
     <!-- METERING -->
-    <a href="javascript:void(0);"
-       class="menu-toggle <?php echo $isMetering ? 'active-parent' : ''; ?>"
-       onclick="toggleAccordion('meteringMenu')">
+    <a href="javascript:void(0);" class="menu-toggle <?php echo $isMetering ? 'active-parent' : ''; ?>" data-target="meteringMenu">
        Metering Module ▾
     </a>
 
-    <div id="meteringMenu" class="submenu" style="<?php echo $isMetering ? 'display:block;' : 'display:none;'; ?>">
-
-        <a href="dashboard.php?page=modules/metering/meter_register.php"
-           class="<?php echo ($current_page == 'meter_register.php') ? 'active' : ''; ?>">
-           Meter Register
-        </a>
-
-        <a href="dashboard.php?page=modules/metering/meter_status.php"
-           class="<?php echo ($current_page == 'meter_status.php') ? 'active' : ''; ?>">
-           Meter Status
-        </a>
-
-        <a href="dashboard.php?page=modules/metering/meter_dashboard.php"
-           class="<?php echo ($current_page == 'meter_dashboard.php') ? 'active' : ''; ?>">
-           Meter Dashboard
-        </a>
-
-        <a href="dashboard.php?page=modules/metering/meter_alerts.php"
-           class="<?php echo ($current_page == 'meter_alerts.php') ? 'active' : ''; ?>">
-           Meter Alerts
-        </a>
-
+    <div id="meteringMenu" class="submenu <?php echo $isMetering ? 'open' : ''; ?>">
+        <a href="dashboard.php?page=modules/metering/meter_register.php" class="<?php echo ($current_page == 'meter_register.php') ? 'active' : ''; ?>">Meter Register</a>
+        <a href="dashboard.php?page=modules/metering/meter_status.php" class="<?php echo ($current_page == 'meter_status.php') ? 'active' : ''; ?>">Meter Status</a>
+        <a href="dashboard.php?page=modules/metering/meter_dashboard.php" class="<?php echo ($current_page == 'meter_dashboard.php') ? 'active' : ''; ?>">Meter Dashboard</a>
+        <a href="dashboard.php?page=modules/metering/meter_alerts.php" class="<?php echo ($current_page == 'meter_alerts.php') ? 'active' : ''; ?>">Meter Alerts</a>
     </div>
 
     <!-- PRODUCTION -->
-    <a href="javascript:void(0);"
-       class="menu-toggle <?php echo $isProduction ? 'active-parent' : ''; ?>"
-       onclick="toggleAccordion('productionMenu')">
+    <a href="javascript:void(0);" class="menu-toggle <?php echo $isProduction ? 'active-parent' : ''; ?>" data-target="productionMenu">
        Production Module ▾
     </a>
 
-    <div id="productionMenu" class="submenu" style="<?php echo $isProduction ? 'display:block;' : 'display:none;'; ?>">
-
-        <a href="dashboard.php?page=modules/production/pumped_volume.php"
-           class="<?php echo ($current_page == 'pumped_volume.php') ? 'active' : ''; ?>">
-           Pumped Volume
-        </a>
-
-        <a href="dashboard.php?page=modules/production/production_comparison.php"
-           class="<?php echo ($current_page == 'production_comparison.php') ? 'active' : ''; ?>">
-           Production Comparison
-        </a>
-
+    <div id="productionMenu" class="submenu <?php echo $isProduction ? 'open' : ''; ?>">
+        <a href="dashboard.php?page=modules/production/pumped_volume.php">Pumped Volume</a>
+        <a href="dashboard.php?page=modules/production/production_comparison.php">Production Comparison</a>
     </div>
 
-
-    <!-- ASSETS MODULE -->
-    <a href="javascript:void(0);"
-       class="menu-toggle <?php echo $isAssets ? 'active-parent' : ''; ?>"
-       onclick="toggleAccordion('assetsMenu')">
+    <!-- ASSETS -->
+    <a href="javascript:void(0);" class="menu-toggle <?php echo $isAssets ? 'active-parent' : ''; ?>" data-target="assetsMenu">
        Assets Module ▾
     </a>
 
-    <div id="assetsMenu" class="submenu" style="<?php echo $isAssets ? 'display:block;' : 'display:none;'; ?>">
-
-        <a href="dashboard.php?page=modules/assets/add_asset.php"
-           class="<?php echo ($current_page == 'add_asset.php') ? 'active' : ''; ?>">
-           Add Asset
-        </a>
-
-        <a href="dashboard.php?page=modules/assets/view_asset.php"
-           class="<?php echo ($current_page == 'view_asset.php') ? 'active' : ''; ?>">
-           View Assets
-        </a>
-
-        <a href="dashboard.php?page=modules/assets/asset_maintenance.php"
-           class="<?php echo ($current_page == 'asset_maintenance.php') ? 'active' : ''; ?>">
-           Asset Maintenance
-        </a>
-
+    <div id="assetsMenu" class="submenu <?php echo $isAssets ? 'open' : ''; ?>">
+        <a href="dashboard.php?page=modules/assets/add_asset.php">Add Asset</a>
+        <a href="dashboard.php?page=modules/assets/view_asset.php">View Assets</a>
+        <a href="dashboard.php?page=modules/assets/asset_maintenance.php">Asset Maintenance</a>
     </div>
 
-    <!-- CUSTOMER RELATIONS -->
-    <a href="javascript:void(0);"
-       class="menu-toggle <?php echo $isCustomer ? 'active-parent' : ''; ?>"
-       onclick="toggleAccordion('customerMenu')">
+    <!-- CUSTOMER -->
+    <a href="javascript:void(0);" class="menu-toggle <?php echo $isCustomer ? 'active-parent' : ''; ?>" data-target="customerMenu">
        Customer Relations ▾
     </a>
 
-    <div id="customerMenu" class="submenu" style="<?php echo $isCustomer ? 'display:block;' : 'display:none;'; ?>">
-
-        <a href="dashboard.php?page=modules/customer/customer_relations.php"
-           class="<?php echo ($current_page == 'customer_relations.php') ? 'active' : ''; ?>">
-           Customer Relations
-        </a>
-
-        <a href="dashboard.php?page=modules/customer/register_customer.php"
-           class="<?php echo ($current_page == 'register_customer.php') ? 'active' : ''; ?>">
-           Register_customer
-        </a>
-         <a href="dashboard.php?page=modules/customer/customer_management.php"
-           class="<?php echo ($current_page == 'customer_mangement.php') ? 'active' : ''; ?>">
-           customer_management
-        </a>
-
+    <div id="customerMenu" class="submenu <?php echo $isCustomer ? 'open' : ''; ?>">
+        <a href="dashboard.php?page=modules/customer/customer_relations.php">Customer Relations</a>
+        <a href="dashboard.php?page=modules/customer/register_customer.php">Register Customer</a>
+        <a href="dashboard.php?page=modules/customer/customer_management.php">Customer Management</a>
     </div>
 
-    <!-- ZONING & GIS -->
-    <a href="javascript:void(0);"
-       class="menu-toggle <?php echo $isZoning ? 'active-parent' : ''; ?>"
-       onclick="toggleAccordion('zoningMenu')">
+    <!-- ZONING -->
+    <a href="javascript:void(0);" class="menu-toggle <?php echo $isZoning ? 'active-parent' : ''; ?>" data-target="zoningMenu">
        Zoning & GIS ▾
     </a>
 
-    <div id="zoningMenu" class="submenu" style="<?php echo $isZoning ? 'display:block;' : 'display:none;'; ?>">
-
-        <a href="dashboard.php?page=modules/zoning/zone_management.php"
-           class="<?php echo ($current_page == 'zone_management.php') ? 'active' : ''; ?>">
-            Zone Management
-        </a>
-
-        <a href="dashboard.php?page=modules/zoning/gis.php"
-           class="<?php echo ($current_page == 'zoning/gis.php') ? 'active' : ''; ?>">
-            GIS Module
-        </a>
-
+    <div id="zoningMenu" class="submenu <?php echo $isZoning ? 'open' : ''; ?>">
+        <a href="dashboard.php?page=modules/zoning/zone_management.php">Zone Management</a>
+        <a href="dashboard.php?page=modules/zoning/gis.php">GIS Module</a>
     </div>
 
-    <!-- ADVANCED REPORTS -->
-    <a href="javascript:void(0);"
-       class="menu-toggle <?php echo $isReports ? 'active-parent' : ''; ?>"
-       onclick="toggleAccordion('reportsMenu')">
+    <!-- REPORTS -->
+    <a href="javascript:void(0);" class="menu-toggle <?php echo $isReports ? 'active-parent' : ''; ?>" data-target="reportsMenu">
        Advanced Reports ▾
     </a>
 
-    <div id="reportsMenu" class="submenu" style="<?php echo $isReports ? 'display:block;' : 'display:none;'; ?>">
-
-        <a href="dashboard.php?page=modules/reports/meter_reports.php"
-           class="<?php echo ($current_page == 'meter_reports.php') ? 'active' : ''; ?>">
-            Meter Reports
-        </a>
-
-        <a href="dashboard.php?page=modules/reports/production_reports.php"
-           class="<?php echo ($current_page == 'production_reports.php') ? 'active' : ''; ?>">
-            Production Reports
-        </a>
-
-        <a href="dashboard.php?page=modules/reports/custom_reports.php"
-           class="<?php echo ($current_page == 'custom_reports.php') ? 'active' : ''; ?>">
-            Custom Reports
-        </a>
-
+    <div id="reportsMenu" class="submenu <?php echo $isReports ? 'open' : ''; ?>">
+        <a href="dashboard.php?page=modules/reports/meter_reports.php">Meter Reports</a>
+        <a href="dashboard.php?page=modules/reports/production_reports.php">Production Reports</a>
+        <a href="dashboard.php?page=modules/reports/custom_reports.php">Custom Reports</a>
     </div>
 
 </div>
 
 <script>
-function toggleAccordion(id) {
-    const menus = document.querySelectorAll('.submenu');
+function initSidebar() {
 
-    menus.forEach(menu => {
-        if (menu.id !== id) menu.style.display = "none";
+    const toggles = document.querySelectorAll(".menu-toggle");
+
+    toggles.forEach(toggle => {
+
+        // Remove old listeners (prevents duplication bugs)
+        toggle.replaceWith(toggle.cloneNode(true));
     });
 
-    const target = document.getElementById(id);
+    // Re-select after cloning
+    const freshToggles = document.querySelectorAll(".menu-toggle");
 
-    target.style.display = (target.style.display === "block") ? "none" : "block";
+    freshToggles.forEach(toggle => {
+
+        toggle.addEventListener("click", function () {
+
+            const targetId = this.getAttribute("data-target");
+            const targetMenu = document.getElementById(targetId);
+
+            document.querySelectorAll(".submenu").forEach(menu => {
+                if(menu !== targetMenu){
+                    menu.classList.remove("open");
+                }
+            });
+
+            targetMenu.classList.toggle("open");
+
+        });
+
+    });
 }
+
+/* RUN ON LOAD */
+document.addEventListener("DOMContentLoaded", initSidebar);
+
+/* 🔥 CRITICAL: RUN AFTER ANY CLICK (fixes your issue) */
+document.addEventListener("click", function () {
+    setTimeout(initSidebar, 50);
+});
 </script>
