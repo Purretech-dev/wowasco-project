@@ -94,123 +94,131 @@ if($_SERVER['REQUEST_METHOD'] == 'POST'){
 <title>Register Meter - WOWASCO</title>
 
 <style>
-/* =========================
-   GLOBAL LAYOUT FIX (PROPER CENTERING)
-========================= */
-body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+
+body{
+    font-family:Segoe UI, sans-serif;
     background:#eef3f8;
     margin:0;
-    
 }
 
-/* CONTENT AREA (ALREADY OFFSET BY SIDEBAR + NAVBAR) */
+/* PAGE LAYOUT - SHIFTED LEFT */
 .page-wrapper{
-    margin-left: 240px;
-    padding-top: 80px;
-    padding-bottom: 60px;
+    margin-left:240px;
+    padding-top:80px;
 
-    min-height: 100vh;
-    box-sizing: border-box;
-
-    display: flex;
-    justify-content: center;
+    display:flex;
+    justify-content:flex-start; /* 🔥 move left */
+    padding-left:30px;
 }
 
-/* THIS FIXES RIGHT SHIFT ISSUE */
-.center-wrapper{
-    width: 100%;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-}
-
-/* FORM CONTAINER */
-.container {
-    width: 100%;
-    max-width: 650px;
+/* FORM CARD */
+.container{
+    width:100%;
+    max-width:380px; /* slightly smaller */
     background:#fff;
-    border-radius: 14px;
-    box-shadow: 0 6px 18px rgba(0,0,0,0.08);
-    margin: 40px auto;
-    margin-left: calc(260px + 40px);
-     margin-left: 260px; /* accounts for sidebar */
-    padding: 0 20px;
-    justify-content: center;
+    border-radius:12px;
+    border:1px solid #e6e6e6;
+    box-shadow:0 4px 12px rgba(0,0,0,0.06);
+    padding:16px;
+
+    /* 🔥 VERTICAL SCROLL ENABLED */
+    max-height:75vh;
+    overflow-y:auto;
+    scrollbar-width:thin;
 }
 
-h2 {
+/* TITLE */
+h2{
     text-align:center;
-    color:#003366;
-    margin-bottom:25px;
+    font-size:16px;
+    color:#2c3e50;
+    margin-bottom:12px;
 }
 
-.message {
-    padding:12px;
-    margin-bottom:20px;
+/* MESSAGE */
+.message{
+    padding:7px;
+    margin-bottom:10px;
     border-radius:6px;
     text-align:center;
-    font-weight:bold;
+    font-size:12px;
 }
-.success {background:#d4edda;color:#155724;}
-.error {background:#f8d7da;color:#721c24;}
 
-form {
+.success{background:#e9f7ef;color:#1e7d4f;}
+.error{background:#fdecea;color:#c0392b;}
+
+/* FORM */
+form{
     display:flex;
     flex-direction:column;
-    gap:14px;
+    gap:8px;
 }
 
-.form-group {
+/* FIELDS */
+.form-group{
     display:flex;
     flex-direction:column;
-    gap:6px;
+    gap:3px;
 }
 
-label {
+label{
+    font-size:11px;
     font-weight:600;
-    color:#333;
+    color:#444;
 }
 
-input, select {
-    width:100%;
-    padding:12px;
-    border-radius:8px;
-    border:1px solid #ccc;
-    font-size:14px;
+/* INPUTS */
+input, select{
+    padding:7px;
+    border:1px solid #ddd;
+    border-radius:6px;
+    font-size:12px;
 }
 
-input:focus, select:focus {
-    border-color:#003366;
-    box-shadow:0 0 5px rgba(0,51,102,0.2);
+/* FOCUS (SUBTLE YELLOW) */
+input:focus, select:focus{
+    border-color:#f1c40f;
+    box-shadow:0 0 0 2px rgba(241,196,15,0.12);
     outline:none;
 }
 
-button {
-    width:100%;
-    padding:12px;
-    background:#003366;
-    color:#fff;
-    border:none;
-    border-radius:8px;
-    font-size:16px;
-    cursor:pointer;
-}
-
-button:hover {
-    background:#00509e;
-}
-
-.back-btn {
-    display:block;
-    margin-top:10px;
+/* BUTTON */
+button{
     padding:10px;
-    background:#6c757d;
-    color:#fff;
-    text-decoration:none;
-    border-radius:6px;
-    text-align:center;
+    border:none;
+    border-radius:7px;
+    background:#2c3e50;
+    color:white;
+    font-size:13px;
+    cursor:pointer;
+
+    /* sticky bottom feel */
+    position:sticky;
+    bottom:0;
 }
+
+button:hover{
+    background:#34495e;
+}
+
+/* BACK BUTTON */
+.back-btn{
+    display:block;
+    text-align:center;
+    padding:7px;
+    margin-top:6px;
+    border-radius:7px;
+    text-decoration:none;
+    background:#f4f6f7;
+    color:#2c3e50;
+    border:1px solid #e0e0e0;
+    font-size:11px;
+}
+
+.back-btn:hover{
+    background:#eef2f3;
+}
+
 </style>
 </head>
 
@@ -218,103 +226,99 @@ button:hover {
 
 <div class="page-wrapper">
 
-    <div class="center-wrapper">
+<div class="container">
 
-        <div class="container">
+<h2>Register Meter</h2>
 
-        <h2>Register New Meter</h2>
+<?php if($message != ''): ?>
+<div class="message <?php echo ($success) ? 'success' : 'error'; ?>">
+    <?php echo $message; ?>
+</div>
+<?php endif; ?>
 
-        <?php if($message != ''): ?>
-        <div class="message <?php echo ($success) ? 'success' : 'error'; ?>">
-            <?php echo $message; ?>
-        </div>
-        <?php endif; ?>
+<form method="POST">
 
-        <form method="POST">
+<div class="form-group">
+<label>Meter Serial</label>
+<input type="text" name="serial_number" required>
+</div>
 
-        <div class="form-group">
-        <label>Meter Serial</label>
-        <input type="text" name="serial_number" required>
-        </div>
+<div class="form-group">
+<label>Model</label>
+<input type="text" name="model" required>
+</div>
 
-        <div class="form-group">
-        <label>Model</label>
-        <input type="text" name="model" required>
-        </div>
+<div class="form-group">
+<label>Meter Type</label>
+<select name="meter_type" required>
+<option value="">-- Select Meter Type --</option>
+<option value="Smart Meter">Smart Meter</option>
+<option value="Conventional Meter">Conventional Meter</option>
+</select>
+</div>
 
-        <div class="form-group">
-        <label>Meter Type</label>
-        <select name="meter_type" required>
-        <option value="">-- Select Meter Type --</option>
-        <option value="Smart Meter">Smart Meter</option>
-        <option value="Conventional Meter">Conventional Meter</option>
-        </select>
-        </div>
+<div class="form-group">
+<label>Customer Name</label>
+<input type="text" name="customer_name" required>
+</div>
 
-        <div class="form-group">
-        <label>Customer Name</label>
-        <input type="text" name="customer_name" required>
-        </div>
+<div class="form-group">
+<label>National ID</label>
+<input type="text" name="national_id" required>
+</div>
 
-        <div class="form-group">
-        <label>National ID</label>
-        <input type="text" name="national_id" required>
-        </div>
+<div class="form-group">
+<label>Phone</label>
+<input type="text" name="customer_phone" required>
+</div>
 
-        <div class="form-group">
-        <label>Customer Phone Number</label>
-        <input type="text" name="customer_phone" required>
-        </div>
+<div class="form-group">
+<label>Alt Phone</label>
+<input type="text" name="alternative_phone">
+</div>
 
-        <div class="form-group">
-        <label>Alternative Phone Number</label>
-        <input type="text" name="alternative_phone">
-        </div>
+<div class="form-group">
+<label>Customer Type</label>
+<select name="customer_type" required>
+<option value="">-- Select --</option>
+<option>Government Entities</option>
+<option>Residential</option>
+<option>Commercial</option>
+<option>Domestic</option>
+</select>
+</div>
 
-        <div class="form-group">
-        <label>Customer Type</label>
-        <select name="customer_type" required>
-        <option value="">-- Select --</option>
-        <option>Government Entities</option>
-        <option>Residential</option>
-        <option>Commercial</option>
-        <option>Domestic</option>
-        </select>
-        </div>
+<div class="form-group">
+<label>Date</label>
+<input type="date" name="installation_date" max="<?php echo date('Y-m-d'); ?>" required>
+</div>
 
-        <div class="form-group">
-        <label>Installation Date</label>
-        <input type="date" name="installation_date" max="<?php echo date('Y-m-d'); ?>" required>
-        </div>
+<div class="form-group">
+<label>Zone</label>
+<select name="zone" required>
+<option value="">-- Select Zone --</option>
+<option>Westlands</option>
+<option>Shimo</option>
+<option>Kasarani</option>
+<option>Kundakindu</option>
+<option>Town</option>
+<option>Unoa</option>
+<option>Kitikyumu</option>
+<option>Mukuyuni</option>
+<option>Muambani</option>
+<option>Mwaani</option>
+<option>Kaiti</option>
+<option>Kilala</option>
+</select>
+</div>
 
-        <div class="form-group">
-        <label>Zone</label>
-        <select name="zone" required>
-        <option value="">-- Select Zone --</option>
-        <option>Westlands</option>
-        <option>Shimo</option>
-        <option>Kasarani</option>
-        <option>Kundakindu</option>
-        <option>Town</option>
-        <option>Unoa</option>
-        <option>Kitikyumu</option>
-        <option>Mukuyuni</option>
-        <option>Muambani</option>
-        <option>Mwaani</option>
-        <option>Kaiti</option>
-        <option>Kilala</option>
-        </select>
-        </div>
+<button type="submit">Register</button>
 
-        <button type="submit">Register Meter</button>
+<a href="/wowasco-system/dashboard.php?page=modules/home.php" class="back-btn">← Back</a>
 
-        <a href="/wowasco-system/dashboard.php?page=modules/home.php" class="back-btn">← Back to Dashboard</a>
+</form>
 
-        </form>
-
-        </div>
-
-    </div>
+</div>
 
 </div>
 

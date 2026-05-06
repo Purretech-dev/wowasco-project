@@ -58,105 +58,97 @@ function riskScore($status, $install_date, $zone){
 
 <style>
 body{
-font-family:Arial;
-margin:0;
-background:#f4f6f9;
+    font-family: Arial;
+    margin:0;
+    background:#f6f7f9;
+    color:#2c3e50;
 }
 
-/* ✅ FIX: OFFSET FROM NAVBAR + SIDEBAR */
 .container{
-margin-left:220px;   /* sidebar width */
-margin-top:70px;     /* navbar height */
-padding:20px;
+    margin-left:220px;
+    margin-top:70px;
+    padding:20px;
 }
 
-/* RESPONSIVE (when sidebar collapses) */
-@media (max-width: 768px){
-.container{
-margin-left:0;
-margin-top:70px;
-}
+@media (max-width:768px){
+.container{margin-left:0;}
 }
 
-h2{color:#003366;}
+h2{color:#2c3e50;}
 
-/* KPI */
 .kpi{
-display:grid;
-grid-template-columns:repeat(4,1fr);
-gap:10px;
-margin-bottom:20px;
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:12px;
+    margin-bottom:20px;
 }
 
 .kpi div{
-background:white;
-padding:15px;
-border-radius:8px;
-text-align:center;
-box-shadow:0 2px 5px rgba(0,0,0,0.08);
+    background:#fff;
+    padding:14px;
+    border-radius:10px;
+    text-align:center;
+    border:1px solid #eaeaea;
 }
 
-/* GRID */
 .grid{
-display:grid;
-grid-template-columns:1fr 1fr;
-gap:15px;
-margin-bottom:20px;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:15px;
+    margin-bottom:20px;
 }
 
 .card{
-background:white;
-padding:15px;
-border-radius:8px;
-box-shadow:0 2px 5px rgba(0,0,0,0.1);
+    background:#fff;
+    padding:15px;
+    border-radius:10px;
+    border:1px solid #eee;
 }
 
-/* TABLE */
 table{
-width:100%;
-border-collapse:collapse;
-table-layout:fixed;
-}
-
-th, td{
-padding:12px;
-text-align:left;
-vertical-align:middle;
-word-wrap:break-word;
-border-bottom:1px solid #eee;
-font-size:13px;
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
 }
 
 th{
-background:#003366;
-color:white;
-font-size:14px;
+    background:#2c3e50;
+    color:white;
+    padding:10px;
 }
 
-td:last-child{
-text-align:center;
+td{
+    padding:10px;
+    border-bottom:1px solid #f0f0f0;
 }
 
 /* BADGES */
 .badge{
-display:inline-block;
-min-width:80px;
-text-align:center;
-padding:6px 10px;
-border-radius:6px;
-font-size:12px;
-font-weight:bold;
-color:white;
+    display:inline-block;
+    padding:5px 10px;
+    border-radius:6px;
+    font-size:12px;
+    font-weight:600;
 }
 
-.red{background:#dc3545;}
-.yellow{background:#ffc107;color:black;}
-.green{background:#28a745;}
+.red{
+    background:#fdecea;
+    color:#c0392b;
+}
 
-/* MAP */
+.yellow{
+    background:#fff8e1;
+    color:#8a6d1e;
+}
+
+.green{
+    background:#e9f7ef;
+    color:#1e7d4f;
+}
+
 #map{
-height:400px;
-border-radius:8px;
+    height:400px;
+    border-radius:10px;
 }
 </style>
 </head>
@@ -165,14 +157,13 @@ border-radius:8px;
 
 <div class="container">
 
-<h2>🌍 WOWASCO Smart Meter Intelligence Dashboard</h2>
+<h2>WOWASCO Smart Meter Intelligence Dashboard</h2>
 
-<!-- KPI -->
 <div class="kpi">
-<div><h3>Total Alerts</h3><p><?= $total_alerts ?></p></div>
-<div><h3>Inactive</h3><p><?= $inactive ?></p></div>
-<div><h3>Old</h3><p><?= $old ?></p></div>
-<div><h3>Missing</h3><p><?= $missing ?></p></div>
+    <div><h3>Total Alerts</h3><p><?= $total_alerts ?></p></div>
+    <div><h3>Inactive</h3><p><?= $inactive ?></p></div>
+    <div><h3>Old</h3><p><?= $old ?></p></div>
+    <div><h3>Missing</h3><p><?= $missing ?></p></div>
 </div>
 
 <div class="grid">
@@ -209,14 +200,18 @@ border-radius:8px;
 <?php while($m = $meters->fetch_assoc()): ?>
 
 <?php
-$risk = riskScore($m['status'] ?? '', $m['installation_date'] ?? '', $m['zone'] ?? '');
+$risk = riskScore(
+    $m['status'] ?? '',
+    $m['installation_date'] ?? '',
+    $m['zone'] ?? ''
+);
 
 if($risk > 70){
-$level = "Critical"; $class = "red";
+    $level = "Critical"; $class = "red";
 }elseif($risk > 40){
-$level = "Warning"; $class = "yellow";
+    $level = "Warning"; $class = "yellow";
 }else{
-$level = "Good"; $class = "green";
+    $level = "Good"; $class = "green";
 }
 ?>
 
@@ -241,14 +236,38 @@ $level = "Good"; $class = "green";
 </div>
 
 <script>
+/* ================= UPDATED DOUGHNUT CHART ================= */
 new Chart(document.getElementById('chart'), {
 type:'doughnut',
 data:{
 labels:['Inactive','Old','Missing'],
 datasets:[{
 data:[<?= $inactive ?>,<?= $old ?>,<?= $missing ?>],
-backgroundColor:['#dc3545','#ffc107','#ff9800']
+
+/* SOFT CORE COLORS */
+backgroundColor:[
+    '#2c3e50',   // dark blue (inactive)
+    '#f1c40f',   // yellow (old)
+    '#27ae60'    // green (missing)
+],
+
+/* BORDER HIGHLIGHT FOR CLARITY */
+borderColor:[
+    '#ffffff',   // clean separation
+    '#ffffff',
+    '#ffffff'
+],
+borderWidth:2
 }]
+},
+options:{
+    plugins:{
+        legend:{
+            labels:{
+                color:'#2c3e50'
+            }
+        }
+    }
 }
 });
 </script>

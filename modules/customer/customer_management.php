@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_issue'])) {
     $stmt->execute();
 }
 
-/* ================= APPLICATION APPROVAL (NEW) ================= */
+/* ================= APPLICATION UPDATE ================= */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_application'])) {
 
     $stmt = $conn->prepare("
@@ -55,8 +55,6 @@ $applications = $conn->query("
     LEFT JOIN customers c ON c.id = sma.customer_id
     ORDER BY sma.id DESC
 ");
-
-$staff = $conn->query("SELECT id, name FROM users WHERE role='staff'");
 ?>
 
 <!DOCTYPE html>
@@ -65,22 +63,95 @@ $staff = $conn->query("SELECT id, name FROM users WHERE role='staff'");
 <title>Customer Management</title>
 
 <style>
-body{margin:0;font-family:Segoe UI;background:#f4f7f6;}
-.page{margin-left:240px;margin-top:70px;padding:20px;}
-.header{background:linear-gradient(90deg,#1e7d4f,#f4c430);color:white;padding:12px;border-radius:8px;margin-bottom:15px;}
+body{
+    margin:0;
+    font-family:Segoe UI;
+    background:#f8f9fa;
+}
 
-.card{background:white;padding:15px;border-radius:10px;margin-bottom:15px;}
+/* LAYOUT */
+.page{
+    margin-left:240px;
+    margin-top:70px;
+    padding:20px;
+}
 
-table{width:100%;border-collapse:collapse;font-size:13px;}
-th{background:#1e7d4f;color:white;padding:8px;}
-td{padding:8px;border-bottom:1px solid #eee;}
+/* HEADER (MINIMAL - NO COLOR BLOCKS) */
+.header{
+    font-size:18px;
+    font-weight:600;
+    margin-bottom:15px;
+    color:#333;
+}
 
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:15px;}
+/* CARDS (NEUTRAL) */
+.card{
+    background:white;
+    padding:15px;
+    border-radius:10px;
+    margin-bottom:15px;
+    border:1px solid #e6e6e6;
+}
 
-.badge{padding:4px 8px;border-radius:5px;color:white;}
-.pending{background:#f4c430;color:#000;}
+/* TABLE */
+table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+}
+
+th{
+    background:#f1f3f5;
+    color:#333;
+    padding:8px;
+    font-weight:600;
+    border-bottom:1px solid #ddd;
+}
+
+td{
+    padding:8px;
+    border-bottom:1px solid #eee;
+}
+
+/* STATUS BADGES (ONLY PLACE COLOR IS USED) */
+.badge{
+    padding:4px 8px;
+    border-radius:5px;
+    color:white;
+    font-size:12px;
+}
+
+/* GREEN */
 .approved{background:#1e7d4f;}
-.rejected{background:#c62828;}
+
+/* YELLOW */
+.pending{background:#f1c40f; color:#000;}
+
+/* RED */
+.rejected{background:#c0392b;}
+
+/* FORM CONTROLS */
+select, input{
+    padding:5px;
+    border:1px solid #ddd;
+    border-radius:5px;
+    font-size:12px;
+    background:white;
+}
+
+button{
+    padding:5px 10px;
+    border:none;
+    border-radius:5px;
+    background:#333;
+    color:white;
+    cursor:pointer;
+    font-size:12px;
+}
+
+button:hover{
+    opacity:0.85;
+}
 </style>
 </head>
 
@@ -93,12 +164,17 @@ td{padding:8px;border-bottom:1px solid #eee;}
 
 <div class="header">Customer Management (Issues + Applications)</div>
 
-<!-- ================= SMART METER APPLICATIONS ================= -->
+<!-- ================= APPLICATIONS ================= -->
 <div class="card">
 <h3>Smart Meter Applications</h3>
 
 <table>
-<tr><th>Customer</th><th>ID</th><th>Status</th><th>Action</th></tr>
+<tr>
+<th>Customer</th>
+<th>ID</th>
+<th>Status</th>
+<th>Action</th>
+</tr>
 
 <?php while($a = $applications->fetch_assoc()): ?>
 <tr>
@@ -142,7 +218,11 @@ td{padding:8px;border-bottom:1px solid #eee;}
 <h3>Customer Issues</h3>
 
 <table>
-<tr><th>Customer</th><th>Issue</th><th>Status</th></tr>
+<tr>
+<th>Customer</th>
+<th>Issue</th>
+<th>Status</th>
+</tr>
 
 <?php while($i = $issues->fetch_assoc()): ?>
 <tr>
