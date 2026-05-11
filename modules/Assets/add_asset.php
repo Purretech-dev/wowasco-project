@@ -1,39 +1,87 @@
 <?php
 require_once __DIR__ . '/../../api/db.php';
 
-/* ================= SAVE (MUST BE FIRST - FIX HEADER ERROR) ================= */
+/* =====================================================
+   SAFE SESSION START
+===================================================== */
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+$user = $_SESSION['username'] ?? 'Admin';
+
+/* =====================================================
+   SAVE / UPDATE ASSET
+===================================================== */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    $asset_type = $_POST['asset_type'] ?? '';
+    $asset_name = trim($_POST['asset_name']);
+    $asset_type = trim($_POST['asset_type']);
+    $subtype = trim($_POST['subtype']);
+    $location = trim($_POST['location']);
+    $status = trim($_POST['status']);
 
-    $serial_number = '';
+    $asset_value = (float) $_POST['asset_value'];
+    $purchase_date = $_POST['purchase_date'];
+
+    $last_service_date = $_POST['last_service_date'];
+    $next_service_date = $_POST['next_service_date'];
+
+    $maintenance_cost = (float) $_POST['maintenance_cost'];
+    $maintenance_notes = trim($_POST['maintenance_notes']);
+
+    $useful_life = (int) $_POST['useful_life'];
 
     if ($asset_type === 'Smart Meter') {
         $serial_number = $_POST['meter_serial'] ?? '';
     } else {
-        $serial_number = $_POST['manual_serial'] ?? '';
+        $serial_number = trim($_POST['manual_serial'] ?? '');
     }
 
-    if (!$serial_number) {
-        die("Serial number is required.");
+    /* =====================================================
+       VALIDATION
+    ===================================================== */
+
+    if ($asset_value < 0) {
+        die("Asset value cannot be negative");
     }
 
-    $asset_name = $_POST['asset_name'] ?? '';
-    $subtype = $_POST['subtype'] ?? '';
-    $location = $_POST['location'] ?? '';
-    $status = $_POST['status'] ?? '';
+    if ($purchase_date > date('Y-m-d')) {
+        die("Purchase date cannot be in the future");
+    }
 
-    $asset_value = (float) ($_POST['asset_value'] ?? 0);
-    $purchase_date = $_POST['purchase_date'] ?? date('Y-m-d');
-    $date_added = date('Y-m-d');
+    /* =====================================================
+       DUPLICATE SERIAL CHECK
+    ===================================================== */
 
-    /* ================= DEPRECIATION ================= */
+    $editId = $_POST['edit_id'] ?? 0;
+
+    $check = $conn->prepare("
+        SELECT id 
+        FROM assets 
+        WHERE serial_number=? 
+        AND id != ?
+    ");
+
+    $check->bind_param("si", $serial_number, $editId);
+    $check->execute();
+
+    $dup = $check->get_result();
+
+    if ($dup->num_rows > 0) {
+        die("Duplicate serial number detected");
+    }
+
+    /* =====================================================
+       DEPRECIATION
+    ===================================================== */
+
     $today = new DateTime();
     $purchase = new DateTime($purchase_date);
+
     $years_used = $purchase->diff($today)->y;
 
-    $useful_life = 5;
-    $annual_depreciation = $asset_value / $useful_life;
+    $annual_depreciation = $asset_value / max($useful_life, 1);
 
     $accumulated_depreciation = min(
         $annual_depreciation * $years_used,
@@ -42,86 +90,158 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $current_value = $asset_value - $accumulated_depreciation;
 
-    /* ================= UPDATE ================= */
-    if (!empty($_POST['edit_id'])) {
+    /* =====================================================
+       IMAGE UPLOAD
+    ===================================================== */
 
-        $stmt = $conn->prepare("
-            UPDATE assets SET
-            asset_name=?, asset_type=?, subtype=?, serial_number=?,
-            location=?, purchase_date=?, status=?,
-            asset_value=?, depreciated_value=?, net_value=?
-            WHERE id=?
-        ");
+    $imagePath = '';
 
-        $stmt->bind_param(
-            "sssssssdddi",
-            $asset_name,
-            $asset_type,
-            $subtype,
-            $serial_number,
-            $location,
-            $purchase_date,
-            $status,
-            $asset_value,
-            $accumulated_depreciation,
-            $current_value,
-            $_POST['edit_id']
+    if (!empty($_FILES['asset_image']['name'])) {
+
+        $uploadDir = "../../uploads/assets/";
+
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0777, true);
+        }
+
+        $fileName = time() . "_" . basename($_FILES['asset_image']['name']);
+
+        $targetFile = $uploadDir . $fileName;
+
+        move_uploaded_file(
+            $_FILES['asset_image']['tmp_name'],
+            $targetFile
         );
 
-        $stmt->execute();
-
-    } else {
-
-        /* ================= INSERT ================= */
-        $stmt = $conn->prepare("
-            INSERT INTO assets
-            (asset_name, asset_type, subtype, serial_number, location,
-             purchase_date, date_added, status,
-             asset_value, depreciated_value, net_value)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
-        ");
-
-        $stmt->bind_param(
-            "ssssssssddd",
-            $asset_name,
-            $asset_type,
-            $subtype,
-            $serial_number,
-            $location,
-            $purchase_date,
-            $date_added,
-            $status,
-            $asset_value,
-            $accumulated_depreciation,
-            $current_value
-        );
-
-        $stmt->execute();
+        $imagePath = $targetFile;
     }
 
-    /* ================= SAFE REDIRECT ================= */
-    header("Location: /wowasco-system/modules/Assets/add_asset.php");
+    /* =====================================================
+       QR CODE
+    ===================================================== */
+
+    $qr_code = 'AST-' . strtoupper(
+        substr(md5($serial_number . time()), 0, 10)
+    );
+
+    /* =====================================================
+       INSERT
+    ===================================================== */
+
+    $stmt = $conn->prepare("
+        INSERT INTO assets (
+            asset_name,
+            asset_type,
+            subtype,
+            serial_number,
+            qr_code,
+            asset_image,
+            location,
+            status,
+            asset_value,
+            depreciated_value,
+            net_value,
+            useful_life,
+            purchase_date,
+            last_service_date,
+            next_service_date,
+            maintenance_cost,
+            maintenance_notes,
+            created_by,
+            date_added
+        )
+        VALUES (
+            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+        )
+    ");
+
+    $todayDate = date('Y-m-d');
+
+    $stmt->bind_param(
+        "sssssssssddisssdsss",
+        $asset_name,
+        $asset_type,
+        $subtype,
+        $serial_number,
+        $qr_code,
+        $imagePath,
+        $location,
+        $status,
+        $asset_value,
+        $accumulated_depreciation,
+        $current_value,
+        $useful_life,
+        $purchase_date,
+        $last_service_date,
+        $next_service_date,
+        $maintenance_cost,
+        $maintenance_notes,
+        $user,
+        $todayDate
+    );
+
+    $stmt->execute();
+
+    header("Location: add_asset.php?success=1");
     exit;
 }
 
-/* ================= LOAD EDIT DATA ================= */
-$editData = null;
+/* =====================================================
+   LOAD DATA
+===================================================== */
 
-if (isset($_GET['edit'])) {
-    $id = (int) $_GET['edit'];
-    $res = $conn->query("SELECT * FROM assets WHERE id=$id");
-    $editData = $res->fetch_assoc();
-}
+$assets = $conn->query("
+    SELECT * 
+    FROM assets 
+    ORDER BY id DESC
+");
 
-/* ================= LOAD METERS ================= */
-$meters = $conn->query("SELECT serial_number, zone, status FROM meters");
+$totalAssets = $conn->query("
+    SELECT COUNT(*) total 
+    FROM assets
+")->fetch_assoc()['total'] ?? 0;
+
+$activeAssets = $conn->query("
+    SELECT COUNT(*) total 
+    FROM assets 
+    WHERE status='Active'
+")->fetch_assoc()['total'] ?? 0;
+
+$faultyAssets = $conn->query("
+    SELECT COUNT(*) total 
+    FROM assets 
+    WHERE status='Faulty'
+")->fetch_assoc()['total'] ?? 0;
+
+$totalValue = $conn->query("
+    SELECT SUM(asset_value) total 
+    FROM assets
+")->fetch_assoc()['total'] ?? 0;
+
+$netValue = $conn->query("
+    SELECT SUM(net_value) total 
+    FROM assets
+")->fetch_assoc()['total'] ?? 0;
+
+/* =====================================================
+   LOAD METERS
+===================================================== */
+
+$meters = $conn->query("
+    SELECT serial_number, zone, status 
+    FROM meters
+");
+
 $meterData = [];
 
 while ($m = $meters->fetch_assoc()) {
     $meterData[] = $m;
 }
 
-/* ================= INCLUDE UI (AFTER PROCESSING) ================= */
+/* =====================================================
+   INCLUDE UI
+===================================================== */
+
 include __DIR__ . '/../../includes/sidebar.php';
 include __DIR__ . '/../../includes/navbar.php';
 ?>
@@ -129,43 +249,134 @@ include __DIR__ . '/../../includes/navbar.php';
 <!DOCTYPE html>
 <html>
 <head>
-<title>WOWASCO Asset Register</title>
+
+<title>WOWASCO Asset Management</title>
+
+<link rel="stylesheet"
+href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
 <style>
-body{margin:0;font-family:Segoe UI;background:#f4f7fb;}
-.page{margin-left:240px;margin-top:70px;padding:20px;}
 
-.header{
-    background:#0b2d5c;color:white;padding:18px;
-    border-radius:8px;display:flex;justify-content:space-between;
+body{
+    margin:0;
+    background:#f4f7fb;
+    font-family:Segoe UI;
+}
+
+.page{
+    margin-left:240px;
+    margin-top:70px;
+    padding:25px;
+}
+
+.topbar{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:25px;
+}
+
+.title{
+    font-size:28px;
+    font-weight:700;
+    color:#0b2d5c;
 }
 
 .add-btn{
-    background:#0f6b5f;padding:10px 15px;
-    border:none;color:white;border-radius:8px;cursor:pointer;
+    background:linear-gradient(135deg,#0b2d5c,#0f6b5f);
+    color:white;
+    border:none;
+    padding:13px 20px;
+    border-radius:12px;
+    cursor:pointer;
+    font-weight:600;
 }
 
-.modal{
-    display:<?= $editData ? 'flex' : 'none' ?>;
-    position:fixed;top:0;left:0;width:100%;height:100%;
-    background:rgba(0,0,0,0.6);
-    justify-content:center;align-items:center;
+.cards{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+    gap:20px;
+    margin-bottom:25px;
 }
 
-.modal-content{
-    background:white;padding:25px;border-radius:12px;width:520px;
+.card{
+    background:white;
+    border-radius:18px;
+    padding:22px;
+    box-shadow:0 6px 18px rgba(0,0,0,0.06);
 }
 
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-.full{grid-column:1/-1;}
-input,select{width:100%;padding:7px;}
-
-.btn{
-    width:100%;margin-top:15px;padding:10px;
-    background:#0f6b5f;color:white;border:none;
+.table-box{
+    background:white;
+    border-radius:18px;
+    padding:20px;
+    box-shadow:0 6px 18px rgba(0,0,0,0.06);
 }
 
-.hidden{display:none;}
+.search-box{
+    margin-bottom:20px;
+}
+
+.search-box input{
+    width:320px;
+    padding:12px;
+    border-radius:12px;
+    border:1px solid #dbe2ea;
+}
+
+.table{
+    width:100%;
+    border-collapse:collapse;
+}
+
+.table th,
+.table td{
+    padding:14px;
+    border-bottom:1px solid #eef2f7;
+    text-align:left;
+}
+
+.asset-img{
+    width:50px;
+    height:50px;
+    border-radius:10px;
+    object-fit:cover;
+}
+
+.badge{
+    padding:6px 12px;
+    border-radius:20px;
+    font-size:12px;
+    font-weight:700;
+}
+
+.active{
+    background:#dcfce7;
+    color:#15803d;
+}
+
+.faulty{
+    background:#fee2e2;
+    color:#b91c1c;
+}
+
+.inactive{
+    background:#e2e8f0;
+    color:#334155;
+}
+
+.placeholder-img{
+    width:50px;
+    height:50px;
+    border-radius:10px;
+    background:#e2e8f0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:#64748b;
+    font-size:18px;
+}
+
 </style>
 </head>
 
@@ -173,131 +384,177 @@ input,select{width:100%;padding:7px;}
 
 <div class="page">
 
-<div class="header">
-WOWASCO Asset Register
-<button class="add-btn" onclick="document.getElementById('assetModal').style.display='flex'">
-+ Add Asset
-</button>
+<div class="topbar">
+
+<div class="title">
+WOWASCO Asset Management Dashboard
 </div>
 
-<div class="modal" id="assetModal">
-<div class="modal-content">
-
-<form method="POST">
-
-<input type="hidden" name="edit_id" value="<?= $editData['id'] ?? '' ?>">
-
-<div class="grid">
-
-<div class="full">
-<label>Asset Name</label>
-<input name="asset_name" required value="<?= $editData['asset_name'] ?? '' ?>">
-</div>
-
-<div>
-<label>Asset Type</label>
-<select name="asset_type" id="asset_type" onchange="toggleSmartMeter()" required>
-<option value="">Select</option>
-<option value="Smart Meter" <?= ($editData['asset_type'] ?? '')=='Smart Meter'?'selected':'' ?>>Smart Meter</option>
-<option value="Field Asset" <?= ($editData['asset_type'] ?? '')=='Field Asset'?'selected':'' ?>>Field Asset</option>
-<option value="Office Asset" <?= ($editData['asset_type'] ?? '')=='Office Asset'?'selected':'' ?>>Office Asset</option>
-</select>
-</div>
-
-<div>
-<label>Subtype</label>
-<select name="subtype">
-<option <?= ($editData['subtype'] ?? '')=='Fixed Asset'?'selected':'' ?>>Fixed Asset</option>
-<option <?= ($editData['subtype'] ?? '')=='Digital Asset'?'selected':'' ?>>Digital Asset</option>
-</select>
-</div>
-
-<div class="full <?= ($editData['asset_type'] ?? '')=='Smart Meter' ? '' : 'hidden' ?>" id="smart_meter_box">
-<label>Meter Serial</label>
-<select name="meter_serial" id="meter_serial" onchange="fillMeterDetails()">
-<option value="">Select Meter</option>
-<?php foreach($meterData as $m): ?>
-<option value="<?= $m['serial_number'] ?>"
-<?= ($editData['serial_number'] ?? '')==$m['serial_number']?'selected':'' ?>>
-<?= $m['serial_number'] ?>
-</option>
-<?php endforeach; ?>
-</select>
-</div>
-
-<div class="full <?= ($editData['asset_type'] ?? '')=='Smart Meter' ? 'hidden' : '' ?>" id="manual_box">
-<label>Serial Number</label>
-<input name="manual_serial" value="<?= $editData['serial_number'] ?? '' ?>">
-</div>
-
-<div class="full">
-<label>Location</label>
-<input name="location" id="location" value="<?= $editData['location'] ?? '' ?>">
-</div>
-
-<div>
-<label>Asset Value</label>
-<input name="asset_value" value="<?= $editData['asset_value'] ?? '' ?>">
-</div>
-
-<div>
-<label>Purchase Date</label>
-<input type="date" name="purchase_date" value="<?= $editData['purchase_date'] ?? '' ?>">
-</div>
-
-<div class="full">
-<label>Status</label>
-<select name="status" id="status">
-<option <?= ($editData['status'] ?? '')=='Active'?'selected':'' ?>>Active</option>
-<option <?= ($editData['status'] ?? '')=='Inactive'?'selected':'' ?>>Inactive</option>
-<option <?= ($editData['status'] ?? '')=='Faulty'?'selected':'' ?>>Faulty</option>
-</select>
-</div>
-
-</div>
-
-<button class="btn">
-<?= $editData ? 'Update Asset' : 'Add Asset' ?>
+<button class="add-btn">
+<i class="fa fa-plus"></i> Add Asset
 </button>
 
-</form>
+</div>
+
+<div class="cards">
+
+<div class="card">
+<small>Total Assets</small>
+<h2><?= $totalAssets ?></h2>
+</div>
+
+<div class="card">
+<small>Active Assets</small>
+<h2><?= $activeAssets ?></h2>
+</div>
+
+<div class="card">
+<small>Faulty Assets</small>
+<h2><?= $faultyAssets ?></h2>
+</div>
+
+<div class="card">
+<small>Total Asset Value</small>
+<h2>KES <?= number_format($totalValue) ?></h2>
+</div>
+
+<div class="card">
+<small>Net Asset Value</small>
+<h2>KES <?= number_format($netValue) ?></h2>
+</div>
 
 </div>
+
+<div class="table-box">
+
+<div class="search-box">
+<input type="text"
+id="searchInput"
+placeholder="Search assets...">
+</div>
+
+<table class="table" id="assetTable">
+
+<thead>
+<tr>
+<th>Image</th>
+<th>Asset</th>
+<th>Type</th>
+<th>Serial</th>
+<th>Location</th>
+<th>Status</th>
+<th>Value</th>
+<th>Net Value</th>
+<th>QR</th>
+</tr>
+</thead>
+
+<tbody>
+
+<?php while($a = $assets->fetch_assoc()): ?>
+
+<tr>
+
+<td>
+
+<?php if(isset($a['asset_image']) && !empty($a['asset_image'])): ?>
+
+<img 
+src="<?= $a['asset_image'] ?>" 
+class="asset-img"
+>
+
+<?php else: ?>
+
+<div class="placeholder-img">
+<i class="fa fa-image"></i>
+</div>
+
+<?php endif; ?>
+
+</td>
+
+<td><?= $a['asset_name'] ?? '' ?></td>
+
+<td><?= $a['asset_type'] ?? '' ?></td>
+
+<td><?= $a['serial_number'] ?? '' ?></td>
+
+<td><?= $a['location'] ?? '' ?></td>
+
+<td>
+
+<span class="badge <?= strtolower($a['status'] ?? 'inactive') ?>">
+
+<?= $a['status'] ?? 'Inactive' ?>
+
+</span>
+
+</td>
+
+<td>
+KES <?= number_format($a['asset_value'] ?? 0) ?>
+</td>
+
+<td>
+KES <?= number_format($a['net_value'] ?? 0) ?>
+</td>
+
+<td>
+
+<?php if(isset($a['qr_code']) && !empty($a['qr_code'])): ?>
+
+<?= $a['qr_code'] ?>
+
+<?php else: ?>
+
+<span style="
+color:#94a3b8;
+font-style:italic;
+">
+Not Generated
+</span>
+
+<?php endif; ?>
+
+</td>
+
+</tr>
+
+<?php endwhile; ?>
+
+</tbody>
+
+</table>
+
 </div>
 
 </div>
 
 <script>
-let meterData = <?= json_encode($meterData) ?>;
 
-function toggleSmartMeter(){
-    let type = document.getElementById("asset_type").value;
+let searchInput =
+document.getElementById('searchInput');
 
-    document.getElementById("smart_meter_box").style.display =
-        (type === "Smart Meter") ? "block" : "none";
+searchInput.addEventListener('keyup', function(){
 
-    document.getElementById("manual_box").style.display =
-        (type === "Smart Meter") ? "none" : "block";
-}
+let value = this.value.toLowerCase();
 
-function fillMeterDetails(){
+let rows =
+document.querySelectorAll(
+'#assetTable tbody tr'
+);
 
-    let serial = document.getElementById("meter_serial").value;
-    let meter = meterData.find(m => m.serial_number === serial);
+rows.forEach(row => {
 
-    if(!meter) return;
+row.style.display =
+row.innerText.toLowerCase().includes(value)
+? ''
+: 'none';
 
-    document.getElementById("location").value = meter.zone || '';
+});
+});
 
-    let statusSelect = document.getElementById("status");
-
-    for(let i=0;i<statusSelect.options.length;i++){
-        if(statusSelect.options[i].value === meter.status){
-            statusSelect.selectedIndex = i;
-            break;
-        }
-    }
-}
 </script>
 
 </body>
