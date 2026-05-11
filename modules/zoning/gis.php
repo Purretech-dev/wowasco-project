@@ -82,8 +82,47 @@ foreach ($zones as $z) {
 
 body{
     margin:0;
-    font-family:Segoe UI;
-    background:#eef2f7;
+    font-family:"Inter","Segoe UI",sans-serif;
+    background:#f1f5f9;
+    color:#1e293b;
+    line-height:1.5;
+    letter-spacing:0.2px;
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+}
+/* ================= TYPOGRAPHY ENHANCEMENT ================= */
+
+h1,h2,h3,h4,h5,h6{
+    margin-top:0;
+    color:#0f172a;
+    font-weight:800;
+    letter-spacing:-0.5px;
+}
+
+.title{
+    letter-spacing:-0.7px;
+    line-height:1.2;
+}
+
+.zone-title{
+    font-size:16px;
+    font-weight:800;
+    letter-spacing:-0.3px;
+}
+
+.info-box{
+    font-size:14px;
+    line-height:1.7;
+}
+
+.badge{
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:0.2px;
+}
+
+.empty{
+    font-size:13px;
 }
 
 .overlay{

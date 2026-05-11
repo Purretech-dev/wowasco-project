@@ -50,8 +50,80 @@ $schedule = [
 /* ================= BASE ================= */
 body{
     margin:0;
-    font-family: "Segoe UI", Arial, sans-serif;
-    background:#eef2f7;
+    font-family:"Inter","Segoe UI",Arial,sans-serif;
+    background:#f1f5f9;
+    color:#1e293b;
+    line-height:1.5;
+    letter-spacing:0.2px;
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+}
+/* ================= TYPOGRAPHY ENHANCEMENT ================= */
+
+h1,h2,h3,h4,h5,h6{
+    margin-top:0;
+    color:#0f172a;
+    font-weight:800;
+    letter-spacing:-0.5px;
+}
+
+h3{
+    font-size:22px;
+    margin-bottom:18px;
+}
+
+.page-title{
+    letter-spacing:-0.7px;
+}
+
+.day-title{
+    letter-spacing:0.3px;
+    text-transform:uppercase;
+}
+
+.source{
+    font-size:13px;
+    font-weight:700;
+}
+
+.zone{
+    font-size:12px;
+    font-weight:500;
+}
+
+.time{
+    font-size:11px;
+    font-weight:500;
+}
+
+.note{
+    font-size:13px;
+    line-height:1.6;
+}
+
+input,
+select{
+    font-size:14px;
+    font-weight:500;
+    color:#1e293b;
+}
+
+input::placeholder{
+    color:#94a3b8;
+}
+
+button{
+    font-size:14px;
+    font-weight:700;
+    letter-spacing:0.3px;
+}
+
+label{
+    font-size:13px;
+    font-weight:700;
+    color:#334155;
+    display:block;
+    margin-bottom:6px;
 }
 
 /* MAIN WRAPPER */
@@ -145,12 +217,14 @@ body{
 /* ================= MODAL ================= */
 .modal{
     display:none;
+    opacity:0;
+    pointer-events:none;
+    transition:0.2s ease;
     position:fixed;
     top:0;left:0;
     width:100%;height:100%;
     background:rgba(0,0,0,0.5);
 }
-
 .modal-content{
     background:#fff;
     width:380px;
@@ -272,18 +346,30 @@ onclick="editEntry('<?php echo $day; ?>','<?php echo $e['source']; ?>','<?php ec
 
 <?php include __DIR__ . '/../../includes/footer.php'; ?>
 
-<script>
-function editEntry(day, source, zone, time){
-    document.getElementById('modal').style.display='block';
-    document.getElementById('day').value=day;
-    document.getElementById('source').value=source;
-    document.getElementById('zone').value=zone;
-    document.getElementById('time').value=time;
+<function editEntry(day, source, zone, time){
+
+    let modal = document.getElementById('modal');
+
+    modal.style.display = 'block';
+    modal.style.pointerEvents = 'auto';
+    modal.style.opacity = '1';
+
+    document.getElementById('day').value = day;
+    document.getElementById('source').value = source;
+    document.getElementById('zone').value = zone;
+    document.getElementById('time').value = time;
+
 }
 
 function saveEdit(){
+
     alert("Saved (DB integration next step)");
-    document.getElementById('modal').style.display='none';
+
+    let modal = document.getElementById('modal');
+
+    modal.style.display = 'none';
+    modal.style.pointerEvents = 'none';
+    modal.style.opacity = '0';
 }
 </script>
 

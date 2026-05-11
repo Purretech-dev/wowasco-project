@@ -45,8 +45,68 @@ $result = $conn->query($sql);
 <style>
 body{
     margin:0;
-    font-family:"Segoe UI";
+    font-family: "Inter", "Segoe UI", sans-serif;
     background:#eef3fb;
+    color:#1e293b;
+    line-height:1.5;
+    letter-spacing:0.2px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+/* ================= TYPOGRAPHY ENHANCEMENT ================= */
+
+h1,h2,h3,h4,h5,h6{
+    margin:0;
+    font-weight:700;
+    letter-spacing:-0.5px;
+    color:#0f172a;
+}
+
+.header{
+    font-size:24px;
+    font-weight:800;
+    letter-spacing:-0.6px;
+}
+
+.filters select,
+.btn,
+.action-btn,
+.dropdown-menu a,
+.dropdown-menu button{
+    font-size:14px;
+    font-weight:500;
+}
+
+th{
+    font-size:14px;
+    font-weight:700;
+    letter-spacing:0.3px;
+    text-transform:uppercase;
+}
+
+td{
+    font-size:14px;
+    font-weight:500;
+    color:#334155;
+}
+
+.back{
+    font-size:14px;
+    font-weight:600;
+}
+
+.success-message{
+    font-size:14px;
+    font-weight:600;
+}
+
+table{
+    font-size:14px;
+}
+
+.dropdown-menu a,
+.dropdown-menu button{
+    transition:all 0.2s ease;
 }
 
 /* HEADER */

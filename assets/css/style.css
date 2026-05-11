@@ -18,6 +18,7 @@ body{
     padding: 0;
     overflow-x: hidden;
     overflow-y: auto;
+    pointer-events:auto;
 }
 
 /* ================= SIDEBAR (SAFE DEFAULT) ================= */
@@ -279,6 +280,13 @@ tr:hover{
     body{
         background:white;
     }
+    .modal{
+    pointer-events:auto;
+}
+
+.hidden{
+    pointer-events:none;
+}
 
     .container{
         margin:0;

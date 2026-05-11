@@ -65,8 +65,71 @@ $applications = $conn->query("
 <style>
 body{
     margin:0;
-    font-family:Segoe UI;
-    background:#f8f9fa;
+    font-family:"Inter","Segoe UI",sans-serif;
+    background:#f1f5f9;
+    color:#1e293b;
+    line-height:1.5;
+    letter-spacing:0.2px;
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+}
+/* ================= TYPOGRAPHY ENHANCEMENT ================= */
+
+h1,h2,h3,h4,h5,h6{
+    margin-top:0;
+    color:#0f172a;
+    font-weight:800;
+    letter-spacing:-0.5px;
+}
+
+h3{
+    font-size:22px;
+    margin-bottom:18px;
+}
+
+p{
+    font-size:14px;
+    color:#475569;
+}
+
+table{
+    font-size:14px;
+}
+
+th{
+    font-size:13px;
+    font-weight:700;
+    letter-spacing:0.5px;
+    text-transform:uppercase;
+}
+
+td{
+    font-size:14px;
+    font-weight:500;
+    color:#334155;
+}
+
+input,
+select{
+    font-size:14px;
+    font-weight:500;
+    color:#1e293b;
+}
+
+input::placeholder{
+    color:#94a3b8;
+}
+
+button{
+    font-size:13px;
+    font-weight:700;
+    letter-spacing:0.3px;
+}
+
+.badge{
+    font-size:12px;
+    font-weight:700;
+    letter-spacing:0.3px;
 }
 
 /* LAYOUT */

@@ -1,105 +1,197 @@
 <style>
 /* =========================
-   WOWASCO SIDEBAR UI (FIXED SCROLL + STABLE TOGGLE)
+   WOWASCO SIDEBAR UI ENHANCED
 ========================= */
 
 .sidebar{
     position:fixed;
-    width:235px;
+    width:240px;
     top:5px;
     bottom:5px;
-    background:#0a2a43;
     left:5px;
+    background:linear-gradient(180deg,#082235 0%, #0a2a43 100%);
     overflow-y:auto;
     overflow-x:hidden;
-    padding:12px 8px;
-    padding-bottom:60px;
-    box-shadow:2px 0 12px rgba(0,0,0,0.15);
+    padding:14px 10px;
+    padding-bottom:70px;
+    box-shadow:2px 0 18px rgba(0,0,0,0.18);
     z-index:1000;
-    border-radius:10px;
+    border-radius:12px;
     scroll-behavior:smooth;
+    border:1px solid rgba(255,255,255,0.04);
 }
 
-.sidebar * {
+.sidebar *{
     box-sizing:border-box;
+    font-family:'Segoe UI',sans-serif;
 }
+/* =========================
+   TYPOGRAPHY ENHANCEMENT
+========================= */
+
+.sidebar a{
+    font-weight:500;
+    letter-spacing:0.3px;
+    line-height:1.4;
+}
+
+.menu-toggle span:first-child{
+    font-size:13.2px;
+    font-weight:600;
+    letter-spacing:0.4px;
+}
+
+.submenu a{
+    font-size:12.6px;
+    font-weight:500;
+    letter-spacing:0.2px;
+}
+
+.system-title{
+    font-size:10.5px;
+    font-weight:600;
+    letter-spacing:1.2px;
+    text-transform:uppercase;
+    line-height:1.5;
+}
+/* =========================
+   BRAND SECTION
+========================= */
 
 .brand{
-    text-align:center;
-    margin-bottom:18px;
+    margin-bottom:20px;
+    padding-bottom:12px;
 }
 
-.logo-img{
-    width:75px;
-    margin:8px auto;
-    display:block;
-}
-
-.divider{
+/* NEW LOGO LAYOUT */
+.logo-wrapper{
     display:flex;
     align-items:center;
     justify-content:center;
-    gap:5px;
-    margin:8px 0;
+    gap:12px;
+    margin-bottom:8px;
 }
 
-.divider .line{
-    width:18px;
-    height:2px;
-    background:#2563eb;
+.logo-column{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:14px;
+}
+
+
+/* VERTICAL DIVIDER */
+.vertical-divider{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:5px;
+}
+
+.vertical-divider .line{
+    width:2px;
+    height:20px;
+    background:#ffffff;
+    border-radius:10px;
 }
 
 .d1,.d2,.d3{
     width:7px;
     height:7px;
     border-radius:50%;
+    box-shadow:0 0 8px rgba(255,255,255,0.25);
 }
 
 .d1{background:#2563eb;}
 .d2{background:#16a34a;}
 .d3{background:#f59e0b;}
 
+.logo-img{
+    width:72px;
+    padding:6px;
+    border-radius:14px;
+    background:rgba(255,255,255,0.04);
+    transition:0.3s ease;
+    border:1px solid rgba(255,255,255,0.06);
+}
+
+.logo-img:hover{
+    transform:scale(1.03);
+    background:rgba(255,255,255,0.08);
+}
+
+.system-title{
+    text-align:center;
+    color:#e2e8f0;
+    font-size:11px;
+    letter-spacing:0.5px;
+    margin-top:10px;
+    opacity:0.85;
+}
+
+/* =========================
+   LINKS
+========================= */
+
 .sidebar a{
-    display:block;
-    padding:10px 12px;
-    margin:3px 0;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:11px 13px;
+    margin:4px 0;
     color:#cbd5e1;
     text-decoration:none;
     font-size:13px;
-    border-radius:6px;
-    transition:0.25s;
+    border-radius:8px;
+    transition:0.25s ease;
+    position:relative;
 }
 
 .sidebar a:hover{
-    background:#123a5a;
+    background:rgba(255,255,255,0.06);
     color:#fff;
     transform:translateX(2px);
 }
 
 .sidebar a.active{
-    background:#2563eb;
+    background:linear-gradient(90deg,#2563eb,#1d4ed8);
     color:#fff;
     font-weight:600;
+    box-shadow:0 4px 10px rgba(37,99,235,0.25);
 }
 
 .active-parent{
-    background:#0f3d2e;
-    color:#16a34a !important;
+    background:rgba(22,163,74,0.12);
+    color:#4ade80 !important;
     font-weight:600;
     border-left:4px solid #16a34a;
 }
 
+/* =========================
+   MENU TOGGLES
+========================= */
+
 .menu-toggle{
     cursor:pointer;
-    font-weight:500;
+    user-select:none;
+    transition:0.25s;
 }
 
-/* ✅ CONTROLLED TOGGLE SYSTEM */
+.menu-toggle:hover{
+    background:rgba(255,255,255,0.05);
+}
+
+/* =========================
+   SUBMENUS
+========================= */
+
 .submenu{
-    margin-left:8px;
-    padding-left:8px;
-    border-left:2px solid #1f3b57;
+    margin-left:10px;
+    padding-left:10px;
+    border-left:2px solid rgba(255,255,255,0.08);
     display:none;
+    animation:fadeIn 0.25s ease;
 }
 
 .submenu.open{
@@ -109,26 +201,49 @@
 .submenu a{
     font-size:12.5px;
     padding:9px 10px;
+    margin:3px 0;
+    border-radius:7px;
 }
 
 .submenu a.active{
     background:#16a34a;
     color:white;
+    font-weight:600;
 }
 
 .submenu a:hover{
     background:#f59e0b;
-    color:#111;
+    color:#111827;
 }
 
-/* SCROLLBAR */
+/* =========================
+   ANIMATION
+========================= */
+
+@keyframes fadeIn{
+    from{
+        opacity:0;
+        transform:translateY(-3px);
+    }
+    to{
+        opacity:1;
+        transform:translateY(0);
+    }
+}
+
+/* =========================
+   SCROLLBAR
+========================= */
+
 .sidebar::-webkit-scrollbar{
     width:6px;
 }
+
 .sidebar::-webkit-scrollbar-thumb{
     background:#2563eb;
     border-radius:10px;
 }
+
 .sidebar::-webkit-scrollbar-track{
     background:transparent;
 }
@@ -136,23 +251,42 @@
 
 <div class="sidebar">
 
+    <!-- BRAND -->
     <div class="brand">
-        <img src="assets/images/logo1.png" class="logo-img">
 
-        <div class="divider">
-            <span class="d1"></span>
-            <span class="line"></span>
-            <span class="d2"></span>
-            <span class="line"></span>
-            <span class="d3"></span>
+        <div class="logo-wrapper">
+
+            <!-- LEFT LOGO -->
+            <div class="logo-column">
+                <img src="assets/images/logo1.png" class="logo-img">
+            </div>
+
+            <!-- CENTER VERTICAL DIVIDER -->
+            <div class="vertical-divider">
+                <span class="d1"></span>
+                <span class="line"></span>
+                <span class="d2"></span>
+                <span class="line"></span>
+                <span class="d3"></span>
+            </div>
+
+            <!-- RIGHT LOGO -->
+            <div class="logo-column">
+                <img src="assets/images/logo2.png" class="logo-img">
+            </div>
+
         </div>
 
-        <img src="assets/images/logo2.png" class="logo-img">
+        <div class="system-title">
+            WOWASCO SMART MANAGEMENT SYSTEM
+        </div>
+
     </div>
 
+    <!-- DASHBOARD -->
     <a href="dashboard.php?page=modules/home.php"
        class="<?php echo ($current_page == 'home.php') ? 'active' : ''; ?>">
-       Dashboard
+       <span>Dashboard</span>
     </a>
 
     <?php
@@ -166,7 +300,8 @@
 
     <!-- METERING -->
     <a href="javascript:void(0);" class="menu-toggle <?php echo $isMetering ? 'active-parent' : ''; ?>" data-target="meteringMenu">
-       Metering Module ▾
+       <span>Metering Module</span>
+       <span>▾</span>
     </a>
 
     <div id="meteringMenu" class="submenu <?php echo $isMetering ? 'open' : ''; ?>">
@@ -178,7 +313,8 @@
 
     <!-- PRODUCTION -->
     <a href="javascript:void(0);" class="menu-toggle <?php echo $isProduction ? 'active-parent' : ''; ?>" data-target="productionMenu">
-       Production Module ▾
+       <span>Production Module</span>
+       <span>▾</span>
     </a>
 
     <div id="productionMenu" class="submenu <?php echo $isProduction ? 'open' : ''; ?>">
@@ -188,7 +324,8 @@
 
     <!-- ASSETS -->
     <a href="javascript:void(0);" class="menu-toggle <?php echo $isAssets ? 'active-parent' : ''; ?>" data-target="assetsMenu">
-       Assets Module ▾
+       <span>Assets Module</span>
+       <span>▾</span>
     </a>
 
     <div id="assetsMenu" class="submenu <?php echo $isAssets ? 'open' : ''; ?>">
@@ -199,7 +336,8 @@
 
     <!-- CUSTOMER -->
     <a href="javascript:void(0);" class="menu-toggle <?php echo $isCustomer ? 'active-parent' : ''; ?>" data-target="customerMenu">
-       Customer Relations ▾
+       <span>Customer Relations</span>
+       <span>▾</span>
     </a>
 
     <div id="customerMenu" class="submenu <?php echo $isCustomer ? 'open' : ''; ?>">
@@ -210,7 +348,8 @@
 
     <!-- ZONING -->
     <a href="javascript:void(0);" class="menu-toggle <?php echo $isZoning ? 'active-parent' : ''; ?>" data-target="zoningMenu">
-       Zoning & GIS ▾
+       <span>Zoning & GIS</span>
+       <span>▾</span>
     </a>
 
     <div id="zoningMenu" class="submenu <?php echo $isZoning ? 'open' : ''; ?>">
@@ -220,7 +359,8 @@
 
     <!-- REPORTS -->
     <a href="javascript:void(0);" class="menu-toggle <?php echo $isReports ? 'active-parent' : ''; ?>" data-target="reportsMenu">
-       Advanced Reports ▾
+       <span>Advanced Reports</span>
+       <span>▾</span>
     </a>
 
     <div id="reportsMenu" class="submenu <?php echo $isReports ? 'open' : ''; ?>">
@@ -237,12 +377,9 @@ function initSidebar() {
     const toggles = document.querySelectorAll(".menu-toggle");
 
     toggles.forEach(toggle => {
-
-        // Remove old listeners (prevents duplication bugs)
         toggle.replaceWith(toggle.cloneNode(true));
     });
 
-    // Re-select after cloning
     const freshToggles = document.querySelectorAll(".menu-toggle");
 
     freshToggles.forEach(toggle => {
@@ -253,9 +390,11 @@ function initSidebar() {
             const targetMenu = document.getElementById(targetId);
 
             document.querySelectorAll(".submenu").forEach(menu => {
+
                 if(menu !== targetMenu){
                     menu.classList.remove("open");
                 }
+
             });
 
             targetMenu.classList.toggle("open");
@@ -265,10 +404,10 @@ function initSidebar() {
     });
 }
 
-/* RUN ON LOAD */
+/* INITIALIZE */
 document.addEventListener("DOMContentLoaded", initSidebar);
 
-/* 🔥 CRITICAL: RUN AFTER ANY CLICK (fixes your issue) */
+/* RE-INITIALIZE AFTER DYNAMIC CLICKS */
 document.addEventListener("click", function () {
     setTimeout(initSidebar, 50);
 });

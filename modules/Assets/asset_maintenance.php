@@ -102,6 +102,71 @@ if (isset($_POST['add'])) {
 <title>Infrastructure Maintenance</title>
 
 <style>
+    /* ================= TYPOGRAPHY ENHANCEMENT ================= */
+
+body{
+    font-family:"Inter","Segoe UI",sans-serif;
+    color:#1e293b;
+    line-height:1.5;
+    letter-spacing:0.2px;
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+}
+
+h3{
+    font-size:18px;
+    font-weight:700;
+    color:#0f172a;
+    letter-spacing:-0.3px;
+}
+
+label{
+    font-size:13px;
+    font-weight:700;
+    color:#334155;
+    letter-spacing:0.2px;
+}
+
+input,
+select{
+    font-size:14px;
+    font-weight:500;
+    color:#1e293b;
+    letter-spacing:0.2px;
+}
+
+input::placeholder{
+    color:#94a3b8;
+}
+
+button{
+    font-size:14px;
+    font-weight:700;
+    letter-spacing:0.3px;
+}
+
+table{
+    font-size:14px;
+}
+
+th{
+    font-size:13px;
+    font-weight:700;
+    letter-spacing:0.5px;
+    text-transform:uppercase;
+}
+
+td{
+    font-size:14px;
+    font-weight:500;
+    color:#334155;
+}
+
+.badge{
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:0.3px;
+}
 
 /* ================= LAYOUT ================= */
 .overlay {
@@ -114,10 +179,12 @@ if (isset($_POST['add'])) {
 
 /* ================= PAGE TITLE (NO ICON) ================= */
 h2 {
-    font-size: 20px;
-    font-weight: 600;
-    color: #0b2d5c;
-    margin-bottom: 15px;
+    font-size: 28px;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 22px;
+    letter-spacing: -0.7px;
+    line-height: 1.2;
 }
 
 /* ================= FORM (REDUCED WIDTH) ================= */
