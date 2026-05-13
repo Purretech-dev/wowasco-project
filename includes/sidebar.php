@@ -1,8 +1,26 @@
-<style>
-/* =========================
-   WOWASCO SIDEBAR UI ENHANCED
-========================= */
+<?php
+$page = $_GET['page'] ?? 'modules/home.php';
 
+function isActivePage($target){
+    global $page;
+    return $page === $target ? 'active' : '';
+}
+
+function isActiveModule($keyword){
+    global $page;
+    return stripos($page, $keyword) !== false;
+}
+
+$isHome       = ($page === 'modules/home.php');
+$isMetering   = isActiveModule('modules/metering');
+$isProduction = isActiveModule('modules/production');
+$isAssets     = isActiveModule('modules/assets');
+$isCustomer   = isActiveModule('modules/customer');
+$isZoning     = isActiveModule('modules/zoning');
+$isReports    = isActiveModule('modules/reports');
+?>
+
+<style>
 .sidebar{
     position:fixed;
     width:240px;
@@ -12,127 +30,18 @@
     background:linear-gradient(180deg,#082235 0%, #0a2a43 100%);
     overflow-y:auto;
     overflow-x:hidden;
-    padding:14px 10px;
-    padding-bottom:70px;
+    padding:14px 10px 70px;
     box-shadow:2px 0 18px rgba(0,0,0,0.18);
     z-index:1000;
     border-radius:12px;
     scroll-behavior:smooth;
-    border:1px solid rgba(255,255,255,0.04);
+    border:1px solid rgba(37,99,235,0.25);
 }
 
 .sidebar *{
     box-sizing:border-box;
     font-family:'Segoe UI',sans-serif;
 }
-/* =========================
-   TYPOGRAPHY ENHANCEMENT
-========================= */
-
-.sidebar a{
-    font-weight:500;
-    letter-spacing:0.3px;
-    line-height:1.4;
-}
-
-.menu-toggle span:first-child{
-    font-size:13.2px;
-    font-weight:600;
-    letter-spacing:0.4px;
-}
-
-.submenu a{
-    font-size:12.6px;
-    font-weight:500;
-    letter-spacing:0.2px;
-}
-
-.system-title{
-    font-size:10.5px;
-    font-weight:600;
-    letter-spacing:1.2px;
-    text-transform:uppercase;
-    line-height:1.5;
-}
-/* =========================
-   BRAND SECTION
-========================= */
-
-.brand{
-    margin-bottom:20px;
-    padding-bottom:12px;
-}
-
-/* NEW LOGO LAYOUT */
-.logo-wrapper{
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    gap:12px;
-    margin-bottom:8px;
-}
-
-.logo-column{
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    gap:14px;
-}
-
-
-/* VERTICAL DIVIDER */
-.vertical-divider{
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    justify-content:center;
-    gap:5px;
-}
-
-.vertical-divider .line{
-    width:2px;
-    height:20px;
-    background:#ffffff;
-    border-radius:10px;
-}
-
-.d1,.d2,.d3{
-    width:7px;
-    height:7px;
-    border-radius:50%;
-    box-shadow:0 0 8px rgba(255,255,255,0.25);
-}
-
-.d1{background:#2563eb;}
-.d2{background:#16a34a;}
-.d3{background:#f59e0b;}
-
-.logo-img{
-    width:72px;
-    padding:6px;
-    border-radius:14px;
-    background:rgba(255,255,255,0.04);
-    transition:0.3s ease;
-    border:1px solid rgba(255,255,255,0.06);
-}
-
-.logo-img:hover{
-    transform:scale(1.03);
-    background:rgba(255,255,255,0.08);
-}
-
-.system-title{
-    text-align:center;
-    color:#e2e8f0;
-    font-size:11px;
-    letter-spacing:0.5px;
-    margin-top:10px;
-    opacity:0.85;
-}
-
-/* =========================
-   LINKS
-========================= */
 
 .sidebar a{
     display:flex;
@@ -145,51 +54,126 @@
     font-size:13px;
     border-radius:8px;
     transition:0.25s ease;
-    position:relative;
+    font-weight:500;
+    letter-spacing:0.3px;
+    line-height:1.4;
 }
 
-.sidebar a:hover{
-    background:rgba(255,255,255,0.06);
-    color:#fff;
+.sidebar a:hover,
+.submenu a:hover{
+    background:rgba(245, 206, 11, 0.98);
+    color:#ffffff;
     transform:translateX(2px);
+    box-shadow:0 4px 12px rgba(245,158,11,0.22);
 }
 
-.sidebar a.active{
-    background:linear-gradient(90deg,#2563eb,#1d4ed8);
-    color:#fff;
-    font-weight:600;
-    box-shadow:0 4px 10px rgba(37,99,235,0.25);
+.sidebar a.active,
+.submenu a.active{
+    background:#16a34a;
+    color:#ffffff !important;
+    font-weight:700;
+    border-left:3px solid #bbf7d0;
+    box-shadow:0 4px 12px rgba(22,163,74,0.28);
 }
 
 .active-parent{
-    background:rgba(22,163,74,0.12);
+    background:rgba(22,163,74,0.15) !important;
     color:#4ade80 !important;
-    font-weight:600;
+    font-weight:700 !important;
     border-left:4px solid #16a34a;
+    box-shadow:inset 0 0 0 1px rgba(22,163,74,0.15);
 }
 
-/* =========================
-   MENU TOGGLES
-========================= */
+.brand{
+    margin-bottom:20px;
+    padding-bottom:12px;
+}
+
+.logo-wrapper{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:12px;
+    margin-bottom:8px;
+}
+
+.logo-column{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+
+.vertical-divider{
+    height:72px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:space-between;
+    padding:2px 0;
+}
+
+.vertical-divider .line{
+    width:2px;
+    flex:1;
+    background:#ffffff;
+    border-radius:10px;
+    min-height:18px;
+}
+
+.d1,.d2,.d3{
+    width:8px;
+    height:8px;
+    border-radius:50%;
+    box-shadow:0 0 8px rgba(255,255,255,0.25);
+    flex-shrink:0;
+}
+
+.d1{background:#2563eb;}
+.d2{background:#16a34a;}
+.d3{background:#f59e0b;}
+
+.logo-img{
+    width:72px;
+    height:72px;
+    object-fit:contain;
+    padding:6px;
+    border-radius:14px;
+    background:rgba(37,99,235,0.12);
+    transition:0.3s ease;
+    border:1px solid rgba(245,158,11,0.22);
+}
+
+.logo-img:hover{
+    transform:scale(1.03);
+    background:rgba(245,158,11,0.18);
+}
+
+.system-title{
+    text-align:center;
+    color:#e2e8f0;
+    font-size:10.5px;
+    font-weight:600;
+    letter-spacing:1.2px;
+    text-transform:uppercase;
+    line-height:1.5;
+    margin-top:10px;
+}
 
 .menu-toggle{
     cursor:pointer;
     user-select:none;
-    transition:0.25s;
 }
 
-.menu-toggle:hover{
-    background:rgba(255,255,255,0.05);
+.menu-toggle span:first-child{
+    font-size:13.2px;
+    font-weight:600;
+    letter-spacing:0.4px;
 }
-
-/* =========================
-   SUBMENUS
-========================= */
 
 .submenu{
     margin-left:10px;
     padding-left:10px;
-    border-left:2px solid rgba(255,255,255,0.08);
+    border-left:2px solid rgba(37,99,235,0.35);
     display:none;
     animation:fadeIn 0.25s ease;
 }
@@ -199,69 +183,41 @@
 }
 
 .submenu a{
-    font-size:12.5px;
+    font-size:12.6px;
+    font-weight:500;
+    letter-spacing:0.2px;
     padding:9px 10px;
     margin:3px 0;
     border-radius:7px;
 }
 
-.submenu a.active{
-    background:#16a34a;
-    color:white;
-    font-weight:600;
-}
-
-.submenu a:hover{
-    background:#f59e0b;
-    color:#111827;
-}
-
-/* =========================
-   ANIMATION
-========================= */
-
 @keyframes fadeIn{
-    from{
-        opacity:0;
-        transform:translateY(-3px);
-    }
-    to{
-        opacity:1;
-        transform:translateY(0);
-    }
+    from{opacity:0; transform:translateY(-3px);}
+    to{opacity:1; transform:translateY(0);}
 }
-
-/* =========================
-   SCROLLBAR
-========================= */
 
 .sidebar::-webkit-scrollbar{
     width:6px;
 }
 
 .sidebar::-webkit-scrollbar-thumb{
-    background:#2563eb;
+    background:#16a34a;
     border-radius:10px;
 }
 
 .sidebar::-webkit-scrollbar-track{
-    background:transparent;
+    background:#0a2a43;
 }
 </style>
 
 <div class="sidebar">
 
-    <!-- BRAND -->
     <div class="brand">
-
         <div class="logo-wrapper">
-
-            <!-- LEFT LOGO -->
             <div class="logo-column">
                 <img src="assets/images/logo1.png" class="logo-img">
             </div>
 
-            <!-- CENTER VERTICAL DIVIDER -->
             <div class="vertical-divider">
                 <span class="d1"></span>
                 <span class="line"></span>
@@ -270,145 +226,95 @@
                 <span class="d3"></span>
             </div>
 
-            <!-- RIGHT LOGO -->
             <div class="logo-column">
                 <img src="assets/images/logo2.png" class="logo-img">
             </div>
-
         </div>
 
         <div class="system-title">
             WOWASCO SMART MANAGEMENT SYSTEM
         </div>
-
     </div>
 
-    <!-- DASHBOARD -->
-    <a href="dashboard.php?page=modules/home.php"
-       class="<?php echo ($current_page == 'home.php') ? 'active' : ''; ?>">
-       <span>Dashboard</span>
+    <a href="dashboard.php?page=modules/home.php" class="<?= $isHome ? 'active' : '' ?>">
+        <span>Dashboard</span>
     </a>
 
-    <?php
-        $isMetering = strpos($page, 'metering') !== false;
-        $isProduction = strpos($page, 'production') !== false;
-        $isAssets = strpos($page, 'assets') !== false;
-        $isCustomer = strpos($page, 'customer') !== false;
-        $isZoning = strpos($page, 'zoning') !== false;
-        $isReports = strpos($page, 'reports') !== false;
-    ?>
-
-    <!-- METERING -->
-    <a href="javascript:void(0);" class="menu-toggle <?php echo $isMetering ? 'active-parent' : ''; ?>" data-target="meteringMenu">
-       <span>Metering Module</span>
-       <span>▾</span>
+    <a href="javascript:void(0);" class="menu-toggle <?= $isMetering ? 'active-parent' : '' ?>" data-target="meteringMenu">
+        <span>Metering Module</span><span>▾</span>
     </a>
 
-    <div id="meteringMenu" class="submenu <?php echo $isMetering ? 'open' : ''; ?>">
-        <a href="dashboard.php?page=modules/metering/meter_register.php" class="<?php echo ($current_page == 'meter_register.php') ? 'active' : ''; ?>">Meter Register</a>
-        <a href="dashboard.php?page=modules/metering/meter_status.php" class="<?php echo ($current_page == 'meter_status.php') ? 'active' : ''; ?>">Meter Status</a>
-        <a href="dashboard.php?page=modules/metering/meter_dashboard.php" class="<?php echo ($current_page == 'meter_dashboard.php') ? 'active' : ''; ?>">Meter Dashboard</a>
-        <a href="dashboard.php?page=modules/metering/meter_alerts.php" class="<?php echo ($current_page == 'meter_alerts.php') ? 'active' : ''; ?>">Meter Alerts</a>
+    <div id="meteringMenu" class="submenu <?= $isMetering ? 'open' : '' ?>">
+        <a href="dashboard.php?page=modules/metering/meter_management.php" class="<?= isActivePage('modules/metering/meter_management.php') ?>">Meter Management</a>
+        <a href="dashboard.php?page=modules/metering/meter_dashboard.php" class="<?= isActivePage('modules/metering/meter_dashboard.php') ?>">Meter Dashboard</a>
+        <a href="dashboard.php?page=modules/metering/meter_alerts.php" class="<?= isActivePage('modules/metering/meter_alerts.php') ?>">Meter Alerts</a>
     </div>
 
-    <!-- PRODUCTION -->
-    <a href="javascript:void(0);" class="menu-toggle <?php echo $isProduction ? 'active-parent' : ''; ?>" data-target="productionMenu">
-       <span>Production Module</span>
-       <span>▾</span>
+    <a href="javascript:void(0);" class="menu-toggle <?= $isProduction ? 'active-parent' : '' ?>" data-target="productionMenu">
+        <span>Production Module</span><span>▾</span>
     </a>
 
-    <div id="productionMenu" class="submenu <?php echo $isProduction ? 'open' : ''; ?>">
-        <a href="dashboard.php?page=modules/production/pumped_volume.php">Pumped Volume</a>
-        <a href="dashboard.php?page=modules/production/production_comparison.php">Production Comparison</a>
+    <div id="productionMenu" class="submenu <?= $isProduction ? 'open' : '' ?>">
+        <a href="dashboard.php?page=modules/production/pumped_volume.php" class="<?= isActivePage('modules/production/pumped_volume.php') ?>">Pumped Volume</a>
+        <a href="dashboard.php?page=modules/production/production_comparison.php" class="<?= isActivePage('modules/production/production_comparison.php') ?>">Production Comparison</a>
     </div>
 
-    <!-- ASSETS -->
-    <a href="javascript:void(0);" class="menu-toggle <?php echo $isAssets ? 'active-parent' : ''; ?>" data-target="assetsMenu">
-       <span>Assets Module</span>
-       <span>▾</span>
+    <a href="javascript:void(0);" class="menu-toggle <?= $isAssets ? 'active-parent' : '' ?>" data-target="assetsMenu">
+        <span>Assets Module</span><span>▾</span>
     </a>
 
-    <div id="assetsMenu" class="submenu <?php echo $isAssets ? 'open' : ''; ?>">
-        <a href="dashboard.php?page=modules/assets/add_asset.php">Add Asset</a>
-        <a href="dashboard.php?page=modules/assets/view_asset.php">View Assets</a>
-        <a href="dashboard.php?page=modules/assets/asset_maintenance.php">Asset Maintenance</a>
+    <div id="assetsMenu" class="submenu <?= $isAssets ? 'open' : '' ?>">
+        <a href="dashboard.php?page=modules/assets/asset_management.php" class="<?= isActivePage('modules/assets/asset_management.php') ?>">Asset Management</a>
+        <a href="dashboard.php?page=modules/assets/asset_maintenance.php" class="<?= isActivePage('modules/assets/asset_maintenance.php') ?>">Asset Maintenance</a>
     </div>
 
-    <!-- CUSTOMER -->
-    <a href="javascript:void(0);" class="menu-toggle <?php echo $isCustomer ? 'active-parent' : ''; ?>" data-target="customerMenu">
-       <span>Customer Relations</span>
-       <span>▾</span>
+    <a href="javascript:void(0);" class="menu-toggle <?= $isCustomer ? 'active-parent' : '' ?>" data-target="customerMenu">
+        <span>Customer Relations</span><span>▾</span>
     </a>
 
-    <div id="customerMenu" class="submenu <?php echo $isCustomer ? 'open' : ''; ?>">
-        <a href="dashboard.php?page=modules/customer/customer_relations.php">Customer Relations</a>
-        <a href="dashboard.php?page=modules/customer/register_customer.php">Register Customer</a>
-        <a href="dashboard.php?page=modules/customer/customer_management.php">Customer Management</a>
+    <div id="customerMenu" class="submenu <?= $isCustomer ? 'open' : '' ?>">
+        <a href="dashboard.php?page=modules/customer/customer_portal.php" class="<?= isActivePage('modules/customer/customer_portal.php') ?>">Customer Portal</a>
+        <a href="dashboard.php?page=modules/customer/customer_management.php" class="<?= isActivePage('modules/customer/customer_management.php') ?>">Customer Management</a>
     </div>
 
-    <!-- ZONING -->
-    <a href="javascript:void(0);" class="menu-toggle <?php echo $isZoning ? 'active-parent' : ''; ?>" data-target="zoningMenu">
-       <span>Zoning & GIS</span>
-       <span>▾</span>
+    <a href="javascript:void(0);" class="menu-toggle <?= $isZoning ? 'active-parent' : '' ?>" data-target="zoningMenu">
+        <span>Zoning & GIS</span><span>▾</span>
     </a>
 
-    <div id="zoningMenu" class="submenu <?php echo $isZoning ? 'open' : ''; ?>">
-        <a href="dashboard.php?page=modules/zoning/zone_management.php">Zone Management</a>
-        <a href="dashboard.php?page=modules/zoning/gis.php">GIS Module</a>
+    <div id="zoningMenu" class="submenu <?= $isZoning ? 'open' : '' ?>">
+        <a href="dashboard.php?page=modules/zoning/zone_management.php" class="<?= isActivePage('modules/zoning/zone_management.php') ?>">Zone Management</a>
+        <a href="dashboard.php?page=modules/zoning/gis.php" class="<?= isActivePage('modules/zoning/gis.php') ?>">GIS Module</a>
     </div>
 
-    <!-- REPORTS -->
-    <a href="javascript:void(0);" class="menu-toggle <?php echo $isReports ? 'active-parent' : ''; ?>" data-target="reportsMenu">
-       <span>Advanced Reports</span>
-       <span>▾</span>
+    <a href="javascript:void(0);" class="menu-toggle <?= $isReports ? 'active-parent' : '' ?>" data-target="reportsMenu">
+        <span>Advanced Reports</span><span>▾</span>
     </a>
 
-    <div id="reportsMenu" class="submenu <?php echo $isReports ? 'open' : ''; ?>">
-        <a href="dashboard.php?page=modules/reports/meter_reports.php">Meter Reports</a>
-        <a href="dashboard.php?page=modules/reports/production_reports.php">Production Reports</a>
-        <a href="dashboard.php?page=modules/reports/custom_reports.php">Custom Reports</a>
+    <div id="reportsMenu" class="submenu <?= $isReports ? 'open' : '' ?>">
+        <a href="dashboard.php?page=modules/reports/md_dashboard.php" class="<?= isActivePage('modules/reports/md_dashboard.php') ?>">Report Dashboard</a>
+        <a href="dashboard.php?page=modules/reports/metering_reports.php" class="<?= isActivePage('modules/reports/metering_reports.php') ?>">Meter Reports</a>
+        <a href="dashboard.php?page=modules/reports/production_reports.php" class="<?= isActivePage('modules/reports/production_reports.php') ?>">Production Reports</a>
+        <a href="dashboard.php?page=modules/reports/asset_reports.php" class="<?= isActivePage('modules/reports/asset_reports.php') ?>">Asset Reports</a>
     </div>
 
 </div>
 
 <script>
-function initSidebar() {
-
-    const toggles = document.querySelectorAll(".menu-toggle");
-
-    toggles.forEach(toggle => {
-        toggle.replaceWith(toggle.cloneNode(true));
-    });
-
-    const freshToggles = document.querySelectorAll(".menu-toggle");
-
-    freshToggles.forEach(toggle => {
-
-        toggle.addEventListener("click", function () {
-
-            const targetId = this.getAttribute("data-target");
-            const targetMenu = document.getElementById(targetId);
+function initSidebar(){
+    document.querySelectorAll(".menu-toggle").forEach(toggle => {
+        toggle.onclick = function(){
+            const targetMenu = document.getElementById(this.getAttribute("data-target"));
 
             document.querySelectorAll(".submenu").forEach(menu => {
-
                 if(menu !== targetMenu){
                     menu.classList.remove("open");
                 }
-
             });
 
             targetMenu.classList.toggle("open");
-
-        });
-
+        };
     });
 }
 
-/* INITIALIZE */
 document.addEventListener("DOMContentLoaded", initSidebar);
-
-/* RE-INITIALIZE AFTER DYNAMIC CLICKS */
-document.addEventListener("click", function () {
-    setTimeout(initSidebar, 50);
-});
 </script>

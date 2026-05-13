@@ -23,8 +23,7 @@ $allowed_pages = [
 
     // METERING MODULE
     'modules/metering/meter_dashboard.php',
-    'modules/metering/meter_register.php',
-    'modules/metering/meter_status.php',
+    'modules/metering/meter_management.php',
     'modules/metering/meter_alerts.php',
 
     // PRODUCTION MODULE (FIXED STRUCTURE)
@@ -32,13 +31,11 @@ $allowed_pages = [
     'modules/production/production_comparison.php',
 
     // ASSETS MODULE (future-safe)
-    'modules/assets/add_asset.php',
-    'modules/assets/view_asset.php',
+    'modules/assets/asset_management.php',
     'modules/assets/asset_maintenance.php',
 
     // CUSTOMER RELATIONS
-    'modules/customer/customer_relations.php',
-    'modules/customer/register_customer.php',
+    'modules/customer/customer_portal.php',
     'modules/customer/customer_management.php',
 
     // ZONING & GIS
@@ -46,8 +43,10 @@ $allowed_pages = [
     'modules/zoning/gis.php',
 
     // REPORTS
-    'modules/reports/advanced_reports.php',
-    'modules/reports/custom_reports.php',
+    'modules/reports/md_dashboard.php',
+    'modules/reports/metering_reports.php',
+    'modules/reports/production_reports.php',
+     'modules/reports/asset_reports.php',
 ];
 
 /* =========================
