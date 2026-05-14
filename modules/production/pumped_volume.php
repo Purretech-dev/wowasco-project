@@ -1,224 +1,325 @@
 <?php
-include(__DIR__ . '/../../api/db.php');
+require_once __DIR__ . '/../../api/db.php';
 
-include(__DIR__ . '/../../includes/sidebar.php');
-include(__DIR__ . '/../../includes/navbar.php');
+/* ================= CREATE TABLE IF NOT EXISTS ================= */
 
-/* ================= FILTER VARIABLES ================= */
+$conn->query("
+CREATE TABLE IF NOT EXISTS pumped_volume_entries (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    meter_id INT NOT NULL,
+    pumped_date DATE NOT NULL,
+    volume_m3 DECIMAL(12,2) NOT NULL DEFAULT 0,
+    source_type VARCHAR(50) DEFAULT 'Manual Entry',
+    remarks TEXT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX (meter_id),
+    INDEX (pumped_date)
+)
+");
 
-$search = $_GET['search'] ?? '';
-$zone_filter = $_GET['zone'] ?? '';
-$customer_type_filter = $_GET['customer_type'] ?? '';
+/* ================= HELPERS ================= */
 
-/* ================= SEARCH FILTER ================= */
-
-$search_sql = "";
-
-/* SERIAL FILTER */
-
-if(!empty($search)){
-
-    $safe =
-    $conn->real_escape_string($search);
-
-    $search_sql .=
-    " AND m.serial_number = '$safe'";
+function safe($value){
+    return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 }
 
-/* ZONE FILTER */
-
-if(!empty($zone_filter)){
-
-    $zone_safe =
-    $conn->real_escape_string($zone_filter);
-
-    $search_sql .=
-    " AND m.zone = '$zone_safe'";
+function jsRedirect($url){
+    echo "<script>window.location.href = '" . addslashes($url) . "';</script>";
+    exit;
 }
 
-/* CUSTOMER TYPE FILTER */
+function redirectBack(){
+    $query = $_GET;
+    $query['saved'] = 1;
+    $query['page'] = 'modules/production/pumped_volume.php';
 
-if(!empty($customer_type_filter)){
-
-    $type_safe =
-    $conn->real_escape_string($customer_type_filter);
-
-    $search_sql .=
-    " AND m.customer_type = '$type_safe'";
+    jsRedirect("dashboard.php?" . http_build_query($query));
 }
 
-/* ================= DATE FILTER ================= */
+/* ================= SAVE PUMPED VOLUME ================= */
 
-$start = $_GET['start_date'] ?? '';
-$end = $_GET['end_date'] ?? '';
+if($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_volume'])){
 
-$filter_sql = "";
+    $meter_id = (int)($_POST['meter_id'] ?? 0);
+    $pumped_date = $_POST['pumped_date'] ?? date('Y-m-d');
+    $volume_m3 = (float)($_POST['volume_m3'] ?? 0);
+    $source_type = trim($_POST['source_type'] ?? 'Manual Entry');
+    $remarks = trim($_POST['remarks'] ?? '');
 
-if($start && $end){
+    if($meter_id > 0 && $volume_m3 >= 0){
 
-    $filter_sql =
-    " AND r.reading_date
-      BETWEEN '$start 00:00:00'
-      AND '$end 23:59:59'";
+        $stmt = $conn->prepare("
+            INSERT INTO pumped_volume_entries
+            (meter_id, pumped_date, volume_m3, source_type, remarks)
+            VALUES (?, ?, ?, ?, ?)
+        ");
+
+        $stmt->bind_param(
+            "isdss",
+            $meter_id,
+            $pumped_date,
+            $volume_m3,
+            $source_type,
+            $remarks
+        );
+
+        $stmt->execute();
+    }
+
+    redirectBack();
 }
+
+/* ================= DELETE RECORD ================= */
+
+if(isset($_GET['delete_entry'])){
+
+    $delete_id = (int)$_GET['delete_entry'];
+
+    $stmt = $conn->prepare("
+        DELETE FROM pumped_volume_entries
+        WHERE id = ?
+    ");
+
+    $stmt->bind_param("i", $delete_id);
+    $stmt->execute();
+
+    $query = $_GET;
+    unset($query['delete_entry']);
+    $query['page'] = 'modules/production/pumped_volume.php';
+
+    jsRedirect("dashboard.php?" . http_build_query($query));
+}
+
+/* ================= FILTERS ================= */
+
+$search = trim($_GET['search'] ?? '');
+$zone_filter = trim($_GET['zone'] ?? '');
+$customer_type_filter = trim($_GET['customer_type'] ?? '');
+$start = trim($_GET['start_date'] ?? '');
+$end = trim($_GET['end_date'] ?? '');
+
+$filterApplied =
+    $search !== '' ||
+    $zone_filter !== '' ||
+    $customer_type_filter !== '' ||
+    ($start !== '' && $end !== '');
+
+$scopeLabel = $filterApplied ? 'Filtered Dataset' : 'All Meters Dataset';
+
+/* ================= DYNAMIC WHERE ================= */
+
+$where = " WHERE 1=1 ";
+$params = [];
+$types = "";
+
+if($search !== ''){
+    $where .= " AND m.serial_number = ? ";
+    $params[] = $search;
+    $types .= "s";
+}
+
+if($zone_filter !== ''){
+    $where .= " AND m.zone = ? ";
+    $params[] = $zone_filter;
+    $types .= "s";
+}
+
+if($customer_type_filter !== ''){
+    $where .= " AND m.customer_type = ? ";
+    $params[] = $customer_type_filter;
+    $types .= "s";
+}
+
+if($start !== '' && $end !== ''){
+    $where .= " AND p.pumped_date BETWEEN ? AND ? ";
+    $params[] = $start;
+    $params[] = $end;
+    $types .= "ss";
+}
+
+/* ================= MAIN ANALYTICS QUERY ================= */
+
+$baseSql = "
+    SELECT
+        m.id AS meter_id,
+        m.serial_number,
+        m.customer_name,
+        m.zone,
+        m.customer_type,
+        m.status,
+        COUNT(p.id) AS entry_count,
+        COALESCE(SUM(p.volume_m3),0) AS pumped_volume,
+        MAX(p.pumped_date) AS last_pumped_date
+    FROM meters m
+    LEFT JOIN pumped_volume_entries p
+        ON p.meter_id = m.id
+    $where
+    GROUP BY
+        m.id,
+        m.serial_number,
+        m.customer_name,
+        m.zone,
+        m.customer_type,
+        m.status
+    ORDER BY pumped_volume DESC
+";
+
+$stmt = $conn->prepare($baseSql);
+
+if(!empty($params)){
+    $stmt->bind_param($types, ...$params);
+}
+
+$stmt->execute();
+$allResult = $stmt->get_result();
+
+$allRows = [];
+
+while($row = $allResult->fetch_assoc()){
+    $allRows[] = $row;
+}
+
+/* ================= KPI DATA BASED ON CURRENT SCOPE ================= */
+
+$total_records = count($allRows);
+$total_volume_all = 0;
+$activeMeters = 0;
+$zoneMap = [];
+$typeMap = [];
+
+foreach($allRows as $row){
+
+    $volume = (float)$row['pumped_volume'];
+    $total_volume_all += $volume;
+
+    if(strtolower(trim($row['status'] ?? '')) === 'active'){
+        $activeMeters++;
+    }
+
+    $zoneName = $row['zone'] ?: 'Unassigned';
+    $typeName = $row['customer_type'] ?: 'Unknown';
+
+    if(!isset($zoneMap[$zoneName])){
+        $zoneMap[$zoneName] = [
+            'zone_name' => $zoneName,
+            'total_volume' => 0,
+            'meters_count' => 0
+        ];
+    }
+
+    $zoneMap[$zoneName]['total_volume'] += $volume;
+    $zoneMap[$zoneName]['meters_count']++;
+
+    if(!isset($typeMap[$typeName])){
+        $typeMap[$typeName] = [
+            'customer_type_name' => $typeName,
+            'total_volume' => 0,
+            'meters_count' => 0
+        ];
+    }
+
+    $typeMap[$typeName]['total_volume'] += $volume;
+    $typeMap[$typeName]['meters_count']++;
+}
+
+$zone_data = array_values($zoneMap);
+$type_data = array_values($typeMap);
+
+usort($zone_data, function($a, $b){
+    return $b['total_volume'] <=> $a['total_volume'];
+});
+
+usort($type_data, function($a, $b){
+    return $b['total_volume'] <=> $a['total_volume'];
+});
+
+$highestZone = !empty($zone_data) ? $zone_data[0]['zone_name'] : 'N/A';
+$highestType = !empty($type_data) ? $type_data[0]['customer_type_name'] : 'N/A';
+
+$avgVolume = $total_records > 0 ? round($total_volume_all / $total_records, 2) : 0;
 
 /* ================= PAGINATION ================= */
 
-$limit = 5;
-
-$page =
-isset($_GET['page_num'])
-? (int)$_GET['page_num']
-: 1;
+$limit = 10;
+$page = isset($_GET['page_num']) ? (int)$_GET['page_num'] : 1;
 
 if($page < 1){
     $page = 1;
 }
 
+$total_pages = max(1, ceil($total_records / $limit));
+
+if($page > $total_pages){
+    $page = $total_pages;
+}
+
 $offset = ($page - 1) * $limit;
+$pagedRows = array_slice($allRows, $offset, $limit);
 
-/* ================= MAIN QUERY ================= */
+/* ================= FILTERED ENTRY LOG ================= */
 
-$base_sql = "
-SELECT
-m.id,
-m.serial_number,
-m.customer_name,
-m.zone,
-m.customer_type,
-SUM(r.consumption) as pumped_volume
-
-FROM meters m
-
-LEFT JOIN meter_readings r
-ON m.id = r.meter_id
-
-WHERE 1=1
-$search_sql
-$filter_sql
-
-GROUP BY m.id
+$entryLogSql = "
+    SELECT
+        p.*,
+        m.serial_number,
+        m.customer_name,
+        m.zone,
+        m.customer_type
+    FROM pumped_volume_entries p
+    INNER JOIN meters m
+        ON p.meter_id = m.id
+    $where
+    ORDER BY p.pumped_date DESC, p.id DESC
+    LIMIT 8
 ";
 
-/* ================= TOTAL COUNT ================= */
+$entryStmt = $conn->prepare($entryLogSql);
 
-$count_result = $conn->query($base_sql);
-
-$total_records = $count_result->num_rows;
-
-$total_pages = ceil($total_records / $limit);
-
-/* ================= FINAL QUERY ================= */
-
-$sql = $base_sql . "
-ORDER BY pumped_volume DESC
-LIMIT $limit OFFSET $offset
-";
-
-$result = $conn->query($sql);
-
-/* ================= TYPE ANALYSIS ================= */
-
-$type_sql = "
-SELECT
-m.customer_type,
-SUM(r.consumption) as total_volume
-
-FROM meters m
-
-LEFT JOIN meter_readings r
-ON m.id = r.meter_id
-
-WHERE 1=1
-$search_sql
-$filter_sql
-
-GROUP BY m.customer_type
-";
-
-$type_result = $conn->query($type_sql);
-
-/* ================= ZONE ANALYSIS ================= */
-
-$zone_sql = "
-SELECT
-m.zone,
-SUM(r.consumption) as total_volume
-
-FROM meters m
-
-LEFT JOIN meter_readings r
-ON m.id = r.meter_id
-
-WHERE 1=1
-$search_sql
-$filter_sql
-
-GROUP BY m.zone
-";
-
-$zone_result = $conn->query($zone_sql);
-
-$zone_data = [];
-
-while($z = $zone_result->fetch_assoc()){
-
-    $zone_data[$z['zone'] ?: 'Unassigned']
-    = $z['total_volume'];
+if(!empty($params)){
+    $entryStmt->bind_param($types, ...$params);
 }
 
-/* ================= TYPE DATA ================= */
+$entryStmt->execute();
+$entryLog = $entryStmt->get_result();
 
-$total_volume_all = 0;
+/* ================= DROPDOWNS ================= */
 
-$type_data = [];
+$metersList = $conn->query("
+    SELECT id, serial_number, customer_name, zone, customer_type
+    FROM meters
+    ORDER BY serial_number ASC
+");
 
-while($row = $type_result->fetch_assoc()){
+$serials = $conn->query("
+    SELECT DISTINCT serial_number
+    FROM meters
+    WHERE serial_number IS NOT NULL AND serial_number != ''
+    ORDER BY serial_number ASC
+");
 
-    $type_data[$row['customer_type'] ?: 'Unknown']
-    = $row['total_volume'];
+$zonesFilter = $conn->query("
+    SELECT DISTINCT zone
+    FROM meters
+    WHERE zone IS NOT NULL AND zone != ''
+    ORDER BY zone ASC
+");
 
-    $total_volume_all += $row['total_volume'];
-}
+$typesFilter = $conn->query("
+    SELECT DISTINCT customer_type
+    FROM meters
+    WHERE customer_type IS NOT NULL AND customer_type != ''
+    ORDER BY customer_type ASC
+");
 
-/* ================= KPI DATA ================= */
-
-$activeMeters = $conn->query("
-SELECT COUNT(*) t
-FROM meters
-WHERE status='Active'
-")->fetch_assoc()['t'];
-
-$highestZone =
-!empty($zone_data)
-? array_keys($zone_data, max($zone_data))[0]
-: 'N/A';
-
-$highestType =
-!empty($type_data)
-? array_keys($type_data, max($type_data))[0]
-: 'N/A';
 ?>
 
-<!DOCTYPE html>
-<html>
-<head>
-
-<meta charset="UTF-8">
-
-<title>Pumped Volumes - WOWASCO</title>
-
 <style>
-
 body{
     font-family:'Segoe UI',system-ui,sans-serif;
     background:#f8fafc;
     margin:0;
     color:#1e293b;
-    -webkit-font-smoothing:antialiased;
 }
-
-/* ================= LAYOUT ================= */
 
 .container{
     margin-left:240px;
@@ -227,24 +328,48 @@ body{
     padding-bottom:120px;
 }
 
-/* ================= TITLES ================= */
-
-h2{
-    font-size:24px;
-    font-weight:700;
-    color:#0f172a;
+.page-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:16px;
     margin-bottom:22px;
-    text-align:center;
 }
 
-h3{
-    font-size:16px;
-    font-weight:700;
+.page-header h2{
+    margin:0;
+    font-size:26px;
+    font-weight:800;
     color:#0f172a;
-    margin-bottom:18px;
 }
 
-/* ================= KPI CARDS ================= */
+.page-header p{
+    margin:6px 0 0;
+    color:#64748b;
+    font-size:13px;
+}
+
+.header-badge{
+    background:#ecfdf3;
+    color:#15803d;
+    border:1px solid #bbf7d0;
+    padding:10px 14px;
+    border-radius:12px;
+    font-size:13px;
+    font-weight:800;
+}
+
+.scope-note{
+    display:inline-block;
+    margin-top:10px;
+    padding:7px 11px;
+    border-radius:20px;
+    background:#eff6ff;
+    color:#1e40af;
+    font-size:12px;
+    font-weight:800;
+}
 
 .kpis{
     display:grid;
@@ -258,9 +383,12 @@ h3{
     border-radius:16px;
     padding:22px;
     border:1px solid #e2e8f0;
-    border-left:4px solid #2563eb;
-    box-shadow:0 2px 8px rgba(15,23,42,0.04);
+    border-left:5px solid #1e7d4f;
+    box-shadow:0 4px 14px rgba(15,23,42,0.04);
 }
+
+.kpi-card.blue{ border-left-color:#1e3a8a; }
+.kpi-card.yellow{ border-left-color:#eab308; }
 
 .kpi-card h3{
     margin:0;
@@ -269,25 +397,72 @@ h3{
 }
 
 .kpi-card p{
-    margin-top:8px;
+    margin:8px 0 0;
     font-size:13px;
     color:#64748b;
-    font-weight:600;
+    font-weight:700;
 }
-
-/* ================= CARDS ================= */
 
 .card{
     background:white;
     border-radius:16px;
     border:1px solid #e2e8f0;
-    border-left:4px solid #2563eb;
     padding:22px;
     margin-bottom:22px;
-    box-shadow:0 2px 8px rgba(15,23,42,0.04);
+    box-shadow:0 4px 14px rgba(15,23,42,0.04);
 }
 
-/* ================= FILTERS ================= */
+.card-title{
+    font-size:17px;
+    font-weight:800;
+    margin-bottom:16px;
+    color:#0f172a;
+}
+
+.form-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+    gap:12px;
+}
+
+input,select,textarea{
+    padding:11px 12px;
+    border:1px solid #dbe2ea;
+    border-radius:10px;
+    font-size:13px;
+    background:white;
+    color:#1e293b;
+    width:100%;
+    box-sizing:border-box;
+}
+
+textarea{
+    min-height:42px;
+    resize:vertical;
+}
+
+button,.btn{
+    padding:11px 16px;
+    border:none;
+    border-radius:10px;
+    background:#1e7d4f;
+    color:white;
+    font-size:13px;
+    font-weight:800;
+    cursor:pointer;
+    text-decoration:none;
+    display:inline-block;
+}
+
+.btn-blue{
+    background:#1e3a8a;
+}
+
+.btn-light{
+    background:#f8fafc;
+    color:#334155;
+    border:1px solid #dbe2ea;
+}
 
 .filter-form{
     display:flex;
@@ -296,29 +471,11 @@ h3{
     align-items:center;
 }
 
-.filter-form input,
-.filter-form select{
-    padding:10px 12px;
-    border:1px solid #dbe2ea;
-    border-radius:10px;
-    font-size:13px;
+.filter-form select,
+.filter-form input{
+    width:auto;
     min-width:180px;
-    background:white;
-    color:#1e293b;
 }
-
-.filter-form button{
-    padding:10px 18px;
-    border:none;
-    border-radius:10px;
-    background:#1e7d4f;
-    color:white;
-    font-size:13px;
-    font-weight:600;
-    cursor:pointer;
-}
-
-/* ================= BUTTONS ================= */
 
 .toggle-btn{
     background:white;
@@ -329,24 +486,14 @@ h3{
     cursor:pointer;
     margin-right:10px;
     margin-bottom:16px;
-    font-weight:600;
-    transition:0.2s ease;
+    font-weight:700;
 }
-
-.toggle-btn:hover{
-    background:#f8fafc;
-}
-
-/* ACTIVE BUTTON */
 
 .active-toggle{
     background:#eff6ff !important;
     border-color:#2563eb !important;
     color:#2563eb !important;
-    box-shadow:0 0 0 2px rgba(37,99,235,0.08);
 }
-
-/* ================= TABLE ================= */
 
 .table-wrapper{
     overflow-x:auto;
@@ -363,7 +510,7 @@ th{
     padding:14px;
     text-align:left;
     font-size:13px;
-    font-weight:700;
+    font-weight:800;
     border-bottom:2px solid #e2e8f0;
 }
 
@@ -372,13 +519,39 @@ td{
     border-bottom:1px solid #f1f5f9;
     font-size:13px;
     color:#1e293b;
+    vertical-align:top;
 }
 
 tr:hover td{
     background:#fcfcfc;
 }
 
-/* ================= DRILLDOWN ================= */
+.badge{
+    padding:6px 11px;
+    border-radius:20px;
+    font-size:12px;
+    font-weight:800;
+    display:inline-block;
+}
+
+.badge-green{
+    background:#dcfce7;
+    color:#15803d;
+}
+
+.badge-yellow{
+    background:#fef9c3;
+    color:#a16207;
+}
+
+.badge-blue{
+    background:#dbeafe;
+    color:#1e40af;
+}
+
+.hidden{
+    display:none;
+}
 
 .expand-btn{
     background:#f8fafc;
@@ -388,7 +561,7 @@ tr:hover td{
     border-radius:8px;
     cursor:pointer;
     font-size:12px;
-    font-weight:600;
+    font-weight:700;
 }
 
 .drilldown{
@@ -417,8 +590,6 @@ tr:hover td{
     margin-bottom:5px;
 }
 
-/* ================= PAGINATION ================= */
-
 .pagination{
     margin-top:22px;
     display:flex;
@@ -435,7 +606,7 @@ tr:hover td{
     color:#334155;
     text-decoration:none;
     font-size:13px;
-    font-weight:600;
+    font-weight:700;
 }
 
 .pagination a.active{
@@ -444,17 +615,30 @@ tr:hover td{
     color:#2563eb;
 }
 
-/* ================= HIDDEN ================= */
-
-.hidden{
-    display:none;
+.alert-success{
+    background:#ecfdf3;
+    color:#166534;
+    border:1px solid #bbf7d0;
+    padding:14px;
+    border-radius:12px;
+    margin-bottom:18px;
+    font-size:13px;
+    font-weight:700;
 }
 
-/* ================= BACK BUTTON ================= */
+.insight{
+    background:#f8fafc;
+    border-left:5px solid #1e3a8a;
+    padding:16px;
+    border-radius:12px;
+    font-size:14px;
+    line-height:1.7;
+    color:#334155;
+}
 
 .back-btn{
     display:inline-block;
-    margin-top:24px;
+    margin-top:10px;
     padding:12px 18px;
     background:white;
     border:1px solid #dbe2ea;
@@ -462,13 +646,14 @@ tr:hover td{
     text-decoration:none;
     border-radius:10px;
     font-size:13px;
-    font-weight:600;
+    font-weight:700;
 }
 
-/* ================= RESPONSIVE ================= */
+.print-report{
+    display:none;
+}
 
 @media(max-width:1000px){
-
     .container{
         margin-left:0;
     }
@@ -480,7 +665,8 @@ tr:hover td{
 
     .filter-form input,
     .filter-form select,
-    .filter-form button{
+    .filter-form button,
+    .filter-form .btn{
         width:100%;
     }
 
@@ -489,500 +675,628 @@ tr:hover td{
     }
 }
 
-</style>
-</head>
+/* ================= PRINT FILTERED DATA ONLY ================= */
 
-<body>
+@media print{
+
+    body{
+        background:white;
+        color:#000;
+    }
+
+    body *{
+        visibility:hidden !important;
+    }
+
+    .print-report,
+    .print-report *{
+        visibility:visible !important;
+    }
+
+    .print-report{
+        display:block !important;
+        position:absolute;
+        left:0;
+        top:0;
+        width:100%;
+        padding:18px;
+        font-family:Arial, sans-serif;
+    }
+
+    .print-report h2{
+        margin:0 0 6px;
+        font-size:22px;
+        color:#000;
+    }
+
+    .print-report p{
+        margin:0 0 14px;
+        font-size:12px;
+        color:#333;
+    }
+
+    .print-report table{
+        width:100%;
+        border-collapse:collapse;
+        font-size:11px;
+    }
+
+    .print-report th,
+    .print-report td{
+        border:1px solid #999;
+        padding:7px;
+        text-align:left;
+        color:#000;
+    }
+
+    .print-report th{
+        background:#eee !important;
+        font-weight:bold;
+    }
+
+    @page{
+        size:A4 landscape;
+        margin:12mm;
+    }
+}
+</style>
+
+<!-- ================= PRINT ONLY FILTERED REPORT ================= -->
+
+<div class="print-report">
+
+    <h2>WOWASCO Pumped Volume Report</h2>
+
+    <p>
+        Scope: <?= safe($scopeLabel) ?> |
+        Generated: <?= date('d M Y H:i') ?> |
+        Records: <?= number_format($total_records) ?> |
+        Total Volume: <?= number_format($total_volume_all,2) ?> m³ |
+        Active Meters: <?= number_format($activeMeters) ?>
+    </p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Meter Serial</th>
+                <th>Customer Name</th>
+                <th>Zone</th>
+                <th>Customer Type</th>
+                <th>Status</th>
+                <th>Records</th>
+                <th>Total Volume</th>
+                <th>Last Entry</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            <?php if(empty($allRows)): ?>
+                <tr>
+                    <td colspan="9">No pumped volume records found.</td>
+                </tr>
+            <?php else: ?>
+                <?php $printNo = 1; foreach($allRows as $printRow): ?>
+                    <tr>
+                        <td><?= $printNo++ ?></td>
+                        <td><?= safe($printRow['serial_number']) ?></td>
+                        <td><?= safe($printRow['customer_name'] ?: 'N/A') ?></td>
+                        <td><?= safe($printRow['zone'] ?: 'Unassigned') ?></td>
+                        <td><?= safe($printRow['customer_type'] ?: 'Unknown') ?></td>
+                        <td><?= safe($printRow['status'] ?: 'N/A') ?></td>
+                        <td><?= number_format($printRow['entry_count']) ?></td>
+                        <td><?= number_format($printRow['pumped_volume'],2) ?> m³</td>
+                        <td><?= safe($printRow['last_pumped_date'] ?: 'N/A') ?></td>
+                    </tr>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </tbody>
+    </table>
+
+</div>
 
 <div class="container">
 
-<h2>📊 Pumped Volume Analytics</h2>
+<div class="page-header">
+    <div>
+        <h2>📊 Pumped Volume Operations Center</h2>
+        <p>Enterprise-level pumped volume capture, zone analysis, customer type analytics, and meter-based reporting.</p>
+        <span class="scope-note">
+            <?= safe($scopeLabel) ?>
+        </span>
+    </div>
 
-<!-- KPI CARDS -->
+    <div class="header-badge">
+        Total Volume: <?= number_format($total_volume_all,2) ?> m³
+    </div>
+</div>
+
+<?php if(isset($_GET['saved'])): ?>
+    <div class="alert-success">
+        Pumped volume record saved successfully.
+    </div>
+<?php endif; ?>
 
 <div class="kpis">
 
-<div class="kpi-card">
-<h3><?= number_format($total_volume_all) ?></h3>
-<p>Total Pumped Volume (m³)</p>
-</div>
+    <div class="kpi-card">
+        <h3><?= number_format($total_records) ?></h3>
+        <p><?= $filterApplied ? 'Filtered Meters' : 'All Meters' ?></p>
+    </div>
 
-<div class="kpi-card">
-<h3><?= $activeMeters ?></h3>
-<p>Active Meters</p>
-</div>
+    <div class="kpi-card blue">
+        <h3><?= number_format($total_volume_all,2) ?></h3>
+        <p>Total Pumped Volume (m³)</p>
+    </div>
 
-<div class="kpi-card">
-<h3><?= htmlspecialchars($highestZone) ?></h3>
-<p>Top Consumption Zone</p>
-</div>
+    <div class="kpi-card">
+        <h3><?= number_format($activeMeters) ?></h3>
+        <p>Active Meters in Scope</p>
+    </div>
 
-<div class="kpi-card">
-<h3><?= htmlspecialchars($highestType) ?></h3>
-<p>Top Customer Type</p>
-</div>
+    <div class="kpi-card yellow">
+        <h3><?= safe($highestZone) ?></h3>
+        <p>Top Consumption Zone</p>
+    </div>
+
+    <div class="kpi-card blue">
+        <h3><?= safe($highestType) ?></h3>
+        <p>Top Customer Type</p>
+    </div>
+
+    <div class="kpi-card">
+        <h3><?= number_format($avgVolume,2) ?></h3>
+        <p>Average Volume per Meter</p>
+    </div>
 
 </div>
-
-<!-- FILTERS -->
 
 <div class="card">
 
-<form
-method="GET"
-action="dashboard.php"
-class="filter-form">
+    <div class="card-title">Add Pumped Volume Record</div>
 
-<input
-type="hidden"
-name="page"
-value="modules/production/pumped_volume.php">
+    <form method="POST" class="form-grid">
 
-<!-- SERIAL FILTER -->
+        <select name="meter_id" required>
+            <option value="">Select Meter / Customer</option>
 
-<select name="search">
+            <?php while($m = $metersList->fetch_assoc()): ?>
+                <option value="<?= (int)$m['id'] ?>">
+                    <?= safe($m['serial_number']) ?> —
+                    <?= safe($m['customer_name'] ?: 'N/A') ?> —
+                    <?= safe($m['zone'] ?: 'Unassigned') ?>
+                </option>
+            <?php endwhile; ?>
+        </select>
 
-<option value="">
-Select Meter Serial
-</option>
+        <input type="date" name="pumped_date" value="<?= date('Y-m-d') ?>" required>
 
-<?php
+        <input
+            type="number"
+            step="0.01"
+            min="0"
+            name="volume_m3"
+            placeholder="Volume Pumped (m³)"
+            required>
 
-$serials = $conn->query("
-SELECT DISTINCT serial_number
-FROM meters
-ORDER BY serial_number ASC
-");
+        <select name="source_type">
+            <option value="Manual Entry">Manual Entry</option>
+            <option value="Meter Reading">Meter Reading</option>
+            <option value="Production Estimate">Production Estimate</option>
+            <option value="Field Report">Field Report</option>
+        </select>
 
-while($s = $serials->fetch_assoc()):
+        <textarea name="remarks" placeholder="Remarks / operational notes"></textarea>
 
-?>
+        <button type="submit" name="save_volume">
+            Save Pumped Volume
+        </button>
 
-<option
-value="<?= htmlspecialchars($s['serial_number']) ?>"
-<?= ($search == $s['serial_number']) ? 'selected' : '' ?>>
-
-<?= htmlspecialchars($s['serial_number']) ?>
-
-</option>
-
-<?php endwhile; ?>
-
-</select>
-
-<!-- ZONE FILTER -->
-
-<select name="zone">
-
-<option value="">
-Select Zone
-</option>
-
-<?php
-
-$zonesFilter = $conn->query("
-SELECT DISTINCT zone
-FROM meters
-WHERE zone IS NOT NULL
-AND zone != ''
-ORDER BY zone ASC
-");
-
-while($z = $zonesFilter->fetch_assoc()):
-
-?>
-
-<option
-value="<?= htmlspecialchars($z['zone']) ?>"
-<?= ($zone_filter == $z['zone']) ? 'selected' : '' ?>>
-
-<?= htmlspecialchars($z['zone']) ?>
-
-</option>
-
-<?php endwhile; ?>
-
-</select>
-
-<!-- CUSTOMER TYPE FILTER -->
-
-<select name="customer_type">
-
-<option value="">
-Customer Type
-</option>
-
-<?php
-
-$types = $conn->query("
-SELECT DISTINCT customer_type
-FROM meters
-WHERE customer_type IS NOT NULL
-AND customer_type != ''
-ORDER BY customer_type ASC
-");
-
-while($t = $types->fetch_assoc()):
-
-?>
-
-<option
-value="<?= htmlspecialchars($t['customer_type']) ?>"
-<?= ($customer_type_filter == $t['customer_type']) ? 'selected' : '' ?>>
-
-<?= htmlspecialchars($t['customer_type']) ?>
-
-</option>
-
-<?php endwhile; ?>
-
-</select>
-
-<!-- DATE FILTERS -->
-
-<input
-type="date"
-name="start_date"
-value="<?= htmlspecialchars($start) ?>">
-
-<input
-type="date"
-name="end_date"
-value="<?= htmlspecialchars($end) ?>">
-
-<button type="submit">
-Filter Analytics
-</button>
-
-</form>
+    </form>
 
 </div>
-
-<!-- TABLE SECTION -->
 
 <div class="card">
 
-<button
-class="toggle-btn active-toggle"
-onclick="toggleTable('customerTable', this)">
+    <div class="card-title">Filter Pumped Volume Analytics</div>
 
-Consumption per Customer
+    <form method="GET" action="dashboard.php" class="filter-form">
 
-</button>
+        <input type="hidden" name="page" value="modules/production/pumped_volume.php">
 
-<button
-class="toggle-btn"
-onclick="toggleTable('zoneTable', this)">
+        <select name="search">
+            <option value="">All Meter Serials</option>
 
-Consumption per Zone
+            <?php while($s = $serials->fetch_assoc()): ?>
+                <option value="<?= safe($s['serial_number']) ?>" <?= ($search == $s['serial_number']) ? 'selected' : '' ?>>
+                    <?= safe($s['serial_number']) ?>
+                </option>
+            <?php endwhile; ?>
+        </select>
 
-</button>
+        <select name="zone">
+            <option value="">All Zones</option>
 
-<button
-class="toggle-btn"
-onclick="toggleTable('typeTable', this)">
+            <?php while($z = $zonesFilter->fetch_assoc()): ?>
+                <option value="<?= safe($z['zone']) ?>" <?= ($zone_filter == $z['zone']) ? 'selected' : '' ?>>
+                    <?= safe($z['zone']) ?>
+                </option>
+            <?php endwhile; ?>
+        </select>
 
-Consumption per Customer Type
+        <select name="customer_type">
+            <option value="">All Customer Types</option>
 
-</button>
+            <?php while($t = $typesFilter->fetch_assoc()): ?>
+                <option value="<?= safe($t['customer_type']) ?>" <?= ($customer_type_filter == $t['customer_type']) ? 'selected' : '' ?>>
+                    <?= safe($t['customer_type']) ?>
+                </option>
+            <?php endwhile; ?>
+        </select>
 
-<!-- CUSTOMER TABLE -->
+        <input type="date" name="start_date" value="<?= safe($start) ?>">
+        <input type="date" name="end_date" value="<?= safe($end) ?>">
 
-<div id="customerTable">
+        <button type="submit">Filter Analytics</button>
 
-<div class="table-wrapper">
+        <a class="btn btn-light" href="dashboard.php?page=modules/production/pumped_volume.php">
+            Reset
+        </a>
 
-<table>
+        <button type="button" class="btn-blue" onclick="window.print()">
+            Print Filtered Report
+        </button>
 
-<tr>
-<th>Meter Serial</th>
-<th>Customer Name</th>
-<th>Zone</th>
-<th>Customer Type</th>
-<th>Pumped Volume</th>
-<th>Action</th>
-</tr>
-
-<?php while($row = $result->fetch_assoc()): ?>
-
-<tr>
-
-<td><?= htmlspecialchars($row['serial_number']) ?></td>
-
-<td><?= htmlspecialchars($row['customer_name']) ?></td>
-
-<td><?= htmlspecialchars($row['zone']) ?></td>
-
-<td><?= htmlspecialchars($row['customer_type']) ?></td>
-
-<td>
-<?= number_format($row['pumped_volume'] ?? 0) ?> m³
-</td>
-
-<td>
-
-<button
-class="expand-btn"
-onclick="toggleDrill(<?= $row['id'] ?>)">
-
-Details
-
-</button>
-
-</td>
-
-</tr>
-
-<!-- DRILLDOWN -->
-
-<tr
-id="drill-<?= $row['id'] ?>"
-class="drilldown">
-
-<td colspan="6">
-
-<div class="drill-card">
-
-<div class="drill-item">
-<strong>Meter Serial</strong>
-<?= htmlspecialchars($row['serial_number']) ?>
-</div>
-
-<div class="drill-item">
-<strong>Customer Name</strong>
-<?= htmlspecialchars($row['customer_name']) ?>
-</div>
-
-<div class="drill-item">
-<strong>Zone</strong>
-<?= htmlspecialchars($row['zone']) ?>
-</div>
-
-<div class="drill-item">
-<strong>Customer Type</strong>
-<?= htmlspecialchars($row['customer_type']) ?>
-</div>
-
-<div class="drill-item">
-<strong>Total Consumption</strong>
-<?= number_format($row['pumped_volume'] ?? 0) ?> m³
-</div>
-
-<div class="drill-item">
-<strong>Consumption Insight</strong>
-
-<?php
-
-$volume = $row['pumped_volume'] ?? 0;
-
-if($volume > 5000){
-
-    echo "High consumption meter";
-
-}
-elseif($volume > 2000){
-
-    echo "Moderate consumption";
-
-}
-else{
-
-    echo "Low consumption";
-}
-
-?>
+    </form>
 
 </div>
 
+<div class="card">
+
+    <button class="toggle-btn active-toggle" onclick="toggleTable('customerTable', this)">
+        Per Meter / Customer
+    </button>
+
+    <button class="toggle-btn" onclick="toggleTable('zoneTable', this)">
+        Per Zone
+    </button>
+
+    <button class="toggle-btn" onclick="toggleTable('typeTable', this)">
+        Per Customer Type
+    </button>
+
+    <button class="toggle-btn" onclick="toggleTable('entryLogTable', this)">
+        Recent Entries
+    </button>
+
+    <div id="customerTable">
+
+        <div class="table-wrapper">
+
+            <table>
+
+                <tr>
+                    <th>Meter Serial</th>
+                    <th>Customer Name</th>
+                    <th>Zone</th>
+                    <th>Customer Type</th>
+                    <th>Records</th>
+                    <th>Total Volume</th>
+                    <th>Last Entry</th>
+                    <th>Action</th>
+                </tr>
+
+                <?php if(empty($pagedRows)): ?>
+
+                    <tr>
+                        <td colspan="8">No pumped volume records found.</td>
+                    </tr>
+
+                <?php endif; ?>
+
+                <?php foreach($pagedRows as $row): ?>
+
+                    <?php
+                        $volume = (float)$row['pumped_volume'];
+
+                        if($volume >= 5000){
+                            $insight = "High consumption / high production demand";
+                            $badge = "badge-green";
+                        }
+                        elseif($volume >= 2000){
+                            $insight = "Moderate consumption";
+                            $badge = "badge-blue";
+                        }
+                        else{
+                            $insight = "Low consumption";
+                            $badge = "badge-yellow";
+                        }
+                    ?>
+
+                    <tr>
+                        <td><strong><?= safe($row['serial_number']) ?></strong></td>
+                        <td><?= safe($row['customer_name'] ?: 'N/A') ?></td>
+                        <td><?= safe($row['zone'] ?: 'Unassigned') ?></td>
+                        <td><?= safe($row['customer_type'] ?: 'Unknown') ?></td>
+                        <td><?= number_format($row['entry_count']) ?></td>
+                        <td><strong><?= number_format($volume,2) ?> m³</strong></td>
+                        <td><?= safe($row['last_pumped_date'] ?: 'N/A') ?></td>
+                        <td>
+                            <button type="button" class="expand-btn" onclick="toggleDrill(<?= (int)$row['meter_id'] ?>)">
+                                Details
+                            </button>
+                        </td>
+                    </tr>
+
+                    <tr id="drill-<?= (int)$row['meter_id'] ?>" class="drilldown">
+                        <td colspan="8">
+
+                            <div class="drill-card">
+
+                                <div class="drill-item">
+                                    <strong>Meter Serial</strong>
+                                    <?= safe($row['serial_number']) ?>
+                                </div>
+
+                                <div class="drill-item">
+                                    <strong>Customer</strong>
+                                    <?= safe($row['customer_name'] ?: 'N/A') ?>
+                                </div>
+
+                                <div class="drill-item">
+                                    <strong>Zone</strong>
+                                    <?= safe($row['zone'] ?: 'Unassigned') ?>
+                                </div>
+
+                                <div class="drill-item">
+                                    <strong>Customer Type</strong>
+                                    <?= safe($row['customer_type'] ?: 'Unknown') ?>
+                                </div>
+
+                                <div class="drill-item">
+                                    <strong>Total Pumped Volume</strong>
+                                    <?= number_format($volume,2) ?> m³
+                                </div>
+
+                                <div class="drill-item">
+                                    <strong>Consumption Class</strong>
+                                    <span class="badge <?= $badge ?>"><?= safe($insight) ?></span>
+                                </div>
+
+                            </div>
+
+                        </td>
+                    </tr>
+
+                <?php endforeach; ?>
+
+            </table>
+
+        </div>
+
+        <div class="pagination">
+
+            <?php if($page > 1): ?>
+                <a href="dashboard.php?page=modules/production/pumped_volume.php&page_num=<?= $page-1 ?>&search=<?= urlencode($search) ?>&zone=<?= urlencode($zone_filter) ?>&customer_type=<?= urlencode($customer_type_filter) ?>&start_date=<?= urlencode($start) ?>&end_date=<?= urlencode($end) ?>">
+                    ← Prev
+                </a>
+            <?php endif; ?>
+
+            <?php for($i=1; $i<=$total_pages; $i++): ?>
+                <a
+                    href="dashboard.php?page=modules/production/pumped_volume.php&page_num=<?= $i ?>&search=<?= urlencode($search) ?>&zone=<?= urlencode($zone_filter) ?>&customer_type=<?= urlencode($customer_type_filter) ?>&start_date=<?= urlencode($start) ?>&end_date=<?= urlencode($end) ?>"
+                    class="<?= ($i == $page) ? 'active' : '' ?>">
+                    <?= $i ?>
+                </a>
+            <?php endfor; ?>
+
+            <?php if($page < $total_pages): ?>
+                <a href="dashboard.php?page=modules/production/pumped_volume.php&page_num=<?= $page+1 ?>&search=<?= urlencode($search) ?>&zone=<?= urlencode($zone_filter) ?>&customer_type=<?= urlencode($customer_type_filter) ?>&start_date=<?= urlencode($start) ?>&end_date=<?= urlencode($end) ?>">
+                    Next →
+                </a>
+            <?php endif; ?>
+
+        </div>
+
+    </div>
+
+    <div id="zoneTable" class="hidden">
+
+        <div class="table-wrapper">
+
+            <table>
+                <tr>
+                    <th>Zone</th>
+                    <th>Meters</th>
+                    <th>Total Volume</th>
+                    <th>Percentage Contribution</th>
+                </tr>
+
+                <?php foreach($zone_data as $zone): ?>
+
+                    <?php
+                        $percentage = $total_volume_all > 0
+                        ? round(($zone['total_volume'] / $total_volume_all) * 100, 1)
+                        : 0;
+                    ?>
+
+                    <tr>
+                        <td><strong><?= safe($zone['zone_name']) ?></strong></td>
+                        <td><?= number_format($zone['meters_count']) ?></td>
+                        <td><?= number_format($zone['total_volume'],2) ?> m³</td>
+                        <td><?= $percentage ?>%</td>
+                    </tr>
+
+                <?php endforeach; ?>
+
+            </table>
+
+        </div>
+
+    </div>
+
+    <div id="typeTable" class="hidden">
+
+        <div class="table-wrapper">
+
+            <table>
+                <tr>
+                    <th>Customer Type</th>
+                    <th>Meters</th>
+                    <th>Total Volume</th>
+                    <th>Percentage Contribution</th>
+                </tr>
+
+                <?php foreach($type_data as $type): ?>
+
+                    <?php
+                        $percentage = $total_volume_all > 0
+                        ? round(($type['total_volume'] / $total_volume_all) * 100, 1)
+                        : 0;
+                    ?>
+
+                    <tr>
+                        <td><strong><?= safe($type['customer_type_name']) ?></strong></td>
+                        <td><?= number_format($type['meters_count']) ?></td>
+                        <td><?= number_format($type['total_volume'],2) ?> m³</td>
+                        <td><?= $percentage ?>%</td>
+                    </tr>
+
+                <?php endforeach; ?>
+
+            </table>
+
+        </div>
+
+    </div>
+
+    <div id="entryLogTable" class="hidden">
+
+        <div class="table-wrapper">
+
+            <table>
+                <tr>
+                    <th>Date</th>
+                    <th>Meter</th>
+                    <th>Customer</th>
+                    <th>Zone</th>
+                    <th>Customer Type</th>
+                    <th>Volume</th>
+                    <th>Source</th>
+                    <th>Remarks</th>
+                    <th>Action</th>
+                </tr>
+
+                <?php if($entryLog->num_rows == 0): ?>
+                    <tr>
+                        <td colspan="9">No recent entries found for this scope.</td>
+                    </tr>
+                <?php endif; ?>
+
+                <?php while($e = $entryLog->fetch_assoc()): ?>
+                    <tr>
+                        <td><?= safe($e['pumped_date']) ?></td>
+                        <td><?= safe($e['serial_number']) ?></td>
+                        <td><?= safe($e['customer_name'] ?: 'N/A') ?></td>
+                        <td><?= safe($e['zone'] ?: 'Unassigned') ?></td>
+                        <td><?= safe($e['customer_type'] ?: 'Unknown') ?></td>
+                        <td><strong><?= number_format($e['volume_m3'],2) ?> m³</strong></td>
+                        <td><?= safe($e['source_type']) ?></td>
+                        <td><?= safe($e['remarks'] ?: '-') ?></td>
+                        <td>
+                            <a
+                                class="btn btn-light"
+                                onclick="return confirm('Delete this pumped volume entry?')"
+                                href="dashboard.php?page=modules/production/pumped_volume.php&delete_entry=<?= (int)$e['id'] ?>">
+                                Delete
+                            </a>
+                        </td>
+                    </tr>
+                <?php endwhile; ?>
+
+            </table>
+
+        </div>
+
+    </div>
+
 </div>
 
-</td>
+<div class="card">
 
-</tr>
+    <div class="card-title">Executive Pumped Volume Intelligence</div>
 
-<?php endwhile; ?>
+    <div class="insight">
+        Current scope:
+        <strong><?= safe($scopeLabel) ?></strong>.
+        The analysis shows
+        <strong><?= number_format($total_records) ?></strong> meter(s) and a total pumped volume of
+        <strong><?= number_format($total_volume_all,2) ?> m³</strong>.
 
-</table>
+        <br><br>
 
-</div>
+        The highest contributing zone is
+        <strong><?= safe($highestZone) ?></strong>, while the highest consuming customer category is
+        <strong><?= safe($highestType) ?></strong>.
 
-<!-- PAGINATION -->
+        <br><br>
 
-<div class="pagination">
-
-<?php if($page > 1): ?>
-
-<a href="dashboard.php?page=modules/production/pumped_volume.php&page_num=<?= $page-1 ?>&search=<?= urlencode($search) ?>&zone=<?= urlencode($zone_filter) ?>&customer_type=<?= urlencode($customer_type_filter) ?>&start_date=<?= urlencode($start) ?>&end_date=<?= urlencode($end) ?>">
-
-← Prev
-
-</a>
-
-<?php endif; ?>
-
-<?php for($i=1; $i<=$total_pages; $i++): ?>
-
-<a
-href="dashboard.php?page=modules/production/pumped_volume.php&page_num=<?= $i ?>&search=<?= urlencode($search) ?>&zone=<?= urlencode($zone_filter) ?>&customer_type=<?= urlencode($customer_type_filter) ?>&start_date=<?= urlencode($start) ?>&end_date=<?= urlencode($end) ?>"
-
-class="<?= ($i == $page) ? 'active' : '' ?>">
-
-<?= $i ?>
-
-</a>
-
-<?php endfor; ?>
-
-<?php if($page < $total_pages): ?>
-
-<a href="dashboard.php?page=modules/production/pumped_volume.php&page_num=<?= $page+1 ?>&search=<?= urlencode($search) ?>&zone=<?= urlencode($zone_filter) ?>&customer_type=<?= urlencode($customer_type_filter) ?>&start_date=<?= urlencode($start) ?>&end_date=<?= urlencode($end) ?>">
-
-Next →
-
-</a>
-
-<?php endif; ?>
+        When no filters are applied, KPIs summarize all meters. When filters are applied,
+        KPIs, tables, print output, zone analysis, and customer type analysis automatically reflect the filtered dataset only.
+    </div>
 
 </div>
 
-</div>
-
-<!-- ZONE TABLE -->
-
-<div id="zoneTable" class="hidden">
-
-<div class="table-wrapper">
-
-<table>
-
-<tr>
-<th>Zone</th>
-<th>Total Volume</th>
-</tr>
-
-<?php foreach($zone_data as $zone => $volume): ?>
-
-<tr>
-
-<td><?= htmlspecialchars($zone) ?></td>
-
-<td><?= number_format($volume) ?> m³</td>
-
-</tr>
-
-<?php endforeach; ?>
-
-</table>
-
-</div>
-
-</div>
-
-<!-- CUSTOMER TYPE TABLE -->
-
-<div id="typeTable" class="hidden">
-
-<div class="table-wrapper">
-
-<table>
-
-<tr>
-<th>Customer Type</th>
-<th>Total Consumption</th>
-<th>Percentage</th>
-</tr>
-
-<?php foreach($type_data as $type => $volume):
-
-$percentage =
-($total_volume_all > 0)
-? round(($volume/$total_volume_all)*100,1)
-: 0;
-
-?>
-
-<tr>
-
-<td>
-<?= htmlspecialchars($type ?: 'Unknown') ?>
-</td>
-
-<td>
-<?= number_format($volume) ?> m³
-</td>
-
-<td>
-<?= $percentage ?>%
-</td>
-
-</tr>
-
-<?php endforeach; ?>
-
-</table>
-
-</div>
-
-</div>
-
-</div>
-
-<a
-href="/wowasco-system/dashboard.php"
-class="back-btn">
-
-← Back
-
+<a href="/wowasco-system/dashboard.php" class="back-btn">
+    ← Back
 </a>
 
 </div>
 
 <script>
-
 function toggleTable(id, btn){
 
-    let customer =
-    document.getElementById('customerTable');
+    let tables = [
+        'customerTable',
+        'zoneTable',
+        'typeTable',
+        'entryLogTable'
+    ];
 
-    let zone =
-    document.getElementById('zoneTable');
+    tables.forEach(tableId => {
+        let table = document.getElementById(tableId);
 
-    let type =
-    document.getElementById('typeTable');
+        if(table){
+            table.style.display = 'none';
+        }
+    });
 
-    customer.style.display = 'none';
-    zone.style.display = 'none';
-    type.style.display = 'none';
+    let selected = document.getElementById(id);
 
-    document.getElementById(id)
-    .style.display = 'block';
+    if(selected){
+        selected.style.display = 'block';
+    }
 
-    /* REMOVE ACTIVE STATE */
-
-    let buttons =
-    document.querySelectorAll('.toggle-btn');
+    let buttons = document.querySelectorAll('.toggle-btn');
 
     buttons.forEach(button => {
         button.classList.remove('active-toggle');
     });
-
-    /* ADD ACTIVE STATE */
 
     btn.classList.add('active-toggle');
 }
 
 function toggleDrill(id){
 
-    let row =
-    document.getElementById('drill-' + id);
+    let row = document.getElementById('drill-' + id);
+
+    if(!row){
+        return;
+    }
 
     row.style.display =
     row.style.display === 'table-row'
     ? 'none'
     : 'table-row';
 }
-
 </script>
-
-</body>
-</html>

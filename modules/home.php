@@ -40,15 +40,11 @@ function groupBy($data, $key){
 /* ================= ACTIVE / INACTIVE ================= */
 
 $activeMeters = array_filter($meters, function($m){
-
     return strtolower(trim($m['status'] ?? '')) == 'active';
-
 });
 
 $inactiveMeters = array_filter($meters, function($m){
-
     return strtolower(trim($m['status'] ?? '')) == 'inactive';
-
 });
 
 /* ================= KPI ================= */
@@ -77,26 +73,51 @@ $zoneRevenue = [];
 $totalRevenue = 0;
 
 $revenueQuery = $conn->query("
-
     SELECT 
         m.zone,
         SUM(r.consumption * 20) AS revenue
-
     FROM meter_readings r
-
     INNER JOIN meters m
         ON r.meter_id = m.id
-
     GROUP BY m.zone
-
 ");
 
 while($row = $revenueQuery->fetch_assoc()){
 
-    $zoneRevenue[$row['zone']] =
-    round($row['revenue'],2);
+    $zone = $row['zone'] ?: 'Unknown';
+
+    $zoneRevenue[$zone] = round($row['revenue'],2);
 
     $totalRevenue += $row['revenue'];
+}
+
+/* ================= ZONE SUMMARY ================= */
+
+$totalZones = count($zoneRevenue);
+
+$healthyZones = 0;
+$riskZones = 0;
+$criticalZones = 0;
+
+foreach($zoneRevenue as $zone => $revenue){
+
+    $active = isset($activeByZone[$zone]) ? count($activeByZone[$zone]) : 0;
+    $inactive = isset($inactiveByZone[$zone]) ? count($inactiveByZone[$zone]) : 0;
+
+    if($inactive == 0){
+        $healthyZones++;
+    }elseif($inactive > $active){
+        $criticalZones++;
+    }else{
+        $riskZones++;
+    }
+}
+
+$highestRevenueZone = 'N/A';
+
+if(!empty($zoneRevenue)){
+    arsort($zoneRevenue);
+    $highestRevenueZone = array_key_first($zoneRevenue);
 }
 
 ?>
@@ -176,17 +197,9 @@ while($row = $revenueQuery->fetch_assoc()){
     transform:translateY(-3px);
 }
 
-.kpi-green{
-    border-left-color:#16a34a;
-}
-
-.kpi-yellow{
-    border-left-color:#eab308;
-}
-
-.kpi-blue{
-    border-left-color:#1e3a8a;
-}
+.kpi-green{ border-left-color:#16a34a; }
+.kpi-yellow{ border-left-color:#eab308; }
+.kpi-blue{ border-left-color:#1e3a8a; }
 
 .kpi-title{
     color:#64748b;
@@ -287,17 +300,9 @@ while($row = $revenueQuery->fetch_assoc()){
     font-size:13px;
 }
 
-.alert-critical{
-    background:#fef2f2;
-}
-
-.alert-warning{
-    background:#fefce8;
-}
-
-.alert-medium{
-    background:#eff6ff;
-}
+.alert-critical{ background:#fef2f2; }
+.alert-warning{ background:#fefce8; }
+.alert-medium{ background:#eff6ff; }
 
 /* ================= TABLE ================= */
 
@@ -351,6 +356,11 @@ tr:hover{
 .badge-yellow{
     background:#fef9c3;
     color:#a16207;
+}
+
+.badge-blue{
+    background:#dbeafe;
+    color:#1e40af;
 }
 
 /* ================= BOTTOM GRID ================= */
@@ -412,6 +422,10 @@ tr:hover{
     font-weight:600;
 }
 
+.summary-btn:hover{
+    background:#fde047;
+}
+
 /* ================= MODAL ================= */
 
 .modal{
@@ -424,7 +438,7 @@ tr:hover{
 }
 
 .modal-content{
-    width:80%;
+    width:85%;
     margin:3% auto;
     background:white;
     border-radius:18px;
@@ -470,6 +484,22 @@ tr:hover{
     border-bottom:none;
 }
 
+.report-section{
+    margin-top:24px;
+    background:#f8fafc;
+    border-left:5px solid #1e3a8a;
+    padding:18px;
+    border-radius:14px;
+    color:#334155;
+    line-height:1.8;
+    font-size:14px;
+}
+
+.report-section h3{
+    margin-top:0;
+    color:#0f172a;
+}
+
 /* ================= RESPONSIVE ================= */
 
 @media(max-width:1000px){
@@ -495,25 +525,13 @@ tr:hover{
 <div class="dashboard-header">
 
     <div>
-
-        <h1>
-            Executive Dashboard
-        </h1>
-
-        <p>
-            Utility Intelligence & Operational Control Center
-        </p>
-
+        <h1>Executive Dashboard</h1>
+        <p>Utility Intelligence & Operational Control Center</p>
     </div>
 
     <div class="date-box">
-
         <span>Today's Date</span>
-
-        <strong>
-            <?= date('d M Y'); ?>
-        </strong>
-
+        <strong><?= date('d M Y'); ?></strong>
     </div>
 
 </div>
@@ -522,71 +540,28 @@ tr:hover{
 
 <div class="kpi-grid">
 
-    <div class="kpi-card kpi-green"
-         onclick="showRevenue()">
-
-        <div class="kpi-title">
-            Revenue Collection
-        </div>
-
-        <div class="kpi-value">
-            KES <?= number_format($totalRevenue); ?>
-        </div>
-
-        <div class="kpi-change">
-            +8% This Month
-        </div>
-
+    <div class="kpi-card kpi-green" onclick="showRevenue()">
+        <div class="kpi-title">Revenue Collection</div>
+        <div class="kpi-value">KES <?= number_format($totalRevenue); ?></div>
+        <div class="kpi-change">+8% This Month</div>
     </div>
 
-    <div class="kpi-card kpi-blue"
-         onclick="showMeters('active')">
-
-        <div class="kpi-title">
-            Active Smart Meters
-        </div>
-
-        <div class="kpi-value">
-            <?= number_format($activeCount); ?>
-        </div>
-
-        <div class="kpi-change">
-            Operational Coverage
-        </div>
-
+    <div class="kpi-card kpi-blue" onclick="showMeters('active')">
+        <div class="kpi-title">Active Smart Meters</div>
+        <div class="kpi-value"><?= number_format($activeCount); ?></div>
+        <div class="kpi-change">Operational Coverage</div>
     </div>
 
-    <div class="kpi-card kpi-yellow"
-         onclick="showMeters('inactive')">
-
-        <div class="kpi-title">
-            Inactive Meters
-        </div>
-
-        <div class="kpi-value">
-            <?= number_format($inactiveCount); ?>
-        </div>
-
-        <div class="kpi-change">
-            Requires Attention
-        </div>
-
+    <div class="kpi-card kpi-yellow" onclick="showMeters('inactive')">
+        <div class="kpi-title">Inactive Meters</div>
+        <div class="kpi-value"><?= number_format($inactiveCount); ?></div>
+        <div class="kpi-change">Requires Attention</div>
     </div>
 
     <div class="kpi-card kpi-green">
-
-        <div class="kpi-title">
-            Collection Efficiency
-        </div>
-
-        <div class="kpi-value">
-            <?= $collectionRate; ?>%
-        </div>
-
-        <div class="kpi-change">
-            Billing Performance
-        </div>
-
+        <div class="kpi-title">Collection Efficiency</div>
+        <div class="kpi-value"><?= $collectionRate; ?>%</div>
+        <div class="kpi-change">Billing Performance</div>
     </div>
 
 </div>
@@ -595,28 +570,17 @@ tr:hover{
 
 <div class="main-grid">
 
-    <!-- REVENUE -->
-
     <div class="card">
 
         <div class="card-header">
-
             <div>
-
-                <div class="card-title">
-                    Revenue Analytics
-                </div>
-
-                <div class="card-subtitle">
-                    Monthly utility performance overview
-                </div>
-
+                <div class="card-title">Revenue Analytics</div>
+                <div class="card-subtitle">Monthly utility performance overview</div>
             </div>
 
-            <button class="action-btn">
+            <button class="action-btn" onclick="showFullIntelligenceReport()">
                 Export Report
             </button>
-
         </div>
 
         <div class="chart-box">
@@ -625,91 +589,50 @@ tr:hover{
 
     </div>
 
-    <!-- ALERTS -->
-
     <div class="card">
 
-        <div class="card-title">
-            Critical Alerts
-        </div>
+        <div class="card-title">Critical Alerts</div>
 
-        <div class="card-subtitle"
-             style="margin-bottom:18px;">
-
+        <div class="card-subtitle" style="margin-bottom:18px;">
             Operational risks requiring action
-
         </div>
 
         <div class="alert alert-critical">
-
-            <strong>
-                Leakage Detected
-            </strong>
-
-            <p>
-                Kasarani Zone
-            </p>
-
+            <strong>Leakage Detected</strong>
+            <p>Kasarani Zone</p>
         </div>
 
         <div class="alert alert-warning">
-
-            <strong>
-                Low Reservoir Level
-            </strong>
-
-            <p>
-                Kamunyolo Reservoir
-            </p>
-
+            <strong>Low Reservoir Level</strong>
+            <p>Kamunyolo Reservoir</p>
         </div>
 
         <div class="alert alert-medium">
-
-            <strong>
-                Offline Smart Meters
-            </strong>
-
-            <p>
-                kundakindu Zone
-            </p>
-            <p>
-                Return Zone
-            </p>
-            <p>
-                Kilala Zone
-            </p>
-
+            <strong>Offline Smart Meters</strong>
+            <p>Kundakindu Zone</p>
+            <p>Return Zone</p>
+            <p>Kilala Zone</p>
         </div>
 
     </div>
 
 </div>
-<!-- ================= ZONE INTELLIGENCE ================= -->
 
-<<!-- ================= ZONE INTELLIGENCE SUMMARY ================= -->
+<!-- ================= ZONE INTELLIGENCE ================= -->
 
 <div class="card">
 
     <div class="card-header">
 
         <div>
-
-            <div class="card-title">
-                Zone Intelligence Center
-            </div>
-
+            <div class="card-title">Zone Intelligence Center</div>
             <div class="card-subtitle">
                 Strategic operational and revenue intelligence across all utility zones
             </div>
-
         </div>
 
-        <button class="action-btn"
-                onclick="showRevenue()">
-
+        <button class="action-btn" onclick="showRevenue()">
             Open Intelligence Center
-
         </button>
 
     </div>
@@ -721,38 +644,20 @@ tr:hover{
         margin-top:10px;
     ">
 
-        <!-- TOTAL ZONES -->
-
         <div style="
             background:#f8fafc;
             border-radius:16px;
             padding:20px;
             border:1px solid #e2e8f0;
         ">
-
-            <div style="
-                color:#64748b;
-                font-size:13px;
-                margin-bottom:10px;
-            ">
-
+            <div style="color:#64748b;font-size:13px;margin-bottom:10px;">
                 Total Operational Zones
-
             </div>
 
-            <div style="
-                font-size:32px;
-                font-weight:700;
-                color:#0f172a;
-            ">
-
-                <?= count($zoneRevenue); ?>
-
+            <div style="font-size:32px;font-weight:700;color:#0f172a;">
+                <?= number_format($totalZones); ?>
             </div>
-
         </div>
-
-        <!-- HEALTHY -->
 
         <div style="
             background:#f0fdf4;
@@ -760,30 +665,14 @@ tr:hover{
             padding:20px;
             border:1px solid #dcfce7;
         ">
-
-            <div style="
-                color:#15803d;
-                font-size:13px;
-                margin-bottom:10px;
-            ">
-
+            <div style="color:#15803d;font-size:13px;margin-bottom:10px;">
                 Healthy Zones
-
             </div>
 
-            <div style="
-                font-size:32px;
-                font-weight:700;
-                color:#166534;
-            ">
-
-                <?= rand(5,9); ?>
-
+            <div style="font-size:32px;font-weight:700;color:#166534;">
+                <?= number_format($healthyZones); ?>
             </div>
-
         </div>
-
-        <!-- RISK -->
 
         <div style="
             background:#fef2f2;
@@ -791,30 +680,14 @@ tr:hover{
             padding:20px;
             border:1px solid #fee2e2;
         ">
-
-            <div style="
-                color:#b91c1c;
-                font-size:13px;
-                margin-bottom:10px;
-            ">
-
+            <div style="color:#b91c1c;font-size:13px;margin-bottom:10px;">
                 Critical Risk Zones
-
             </div>
 
-            <div style="
-                font-size:32px;
-                font-weight:700;
-                color:#dc2626;
-            ">
-
-                <?= rand(1,3); ?>
-
+            <div style="font-size:32px;font-weight:700;color:#dc2626;">
+                <?= number_format($criticalZones); ?>
             </div>
-
         </div>
-
-        <!-- TOP REVENUE -->
 
         <div style="
             background:#eff6ff;
@@ -822,32 +695,16 @@ tr:hover{
             padding:20px;
             border:1px solid #dbeafe;
         ">
-
-            <div style="
-                color:#1d4ed8;
-                font-size:13px;
-                margin-bottom:10px;
-            ">
-
+            <div style="color:#1d4ed8;font-size:13px;margin-bottom:10px;">
                 Highest Revenue Zone
-
             </div>
 
-            <div style="
-                font-size:22px;
-                font-weight:700;
-                color:#1e3a8a;
-            ">
-
-                <?= array_key_first($zoneRevenue); ?>
-
+            <div style="font-size:22px;font-weight:700;color:#1e3a8a;">
+                <?= htmlspecialchars($highestRevenueZone); ?>
             </div>
-
         </div>
 
     </div>
-
-    <!-- EXECUTIVE MESSAGE -->
 
     <div style="
         margin-top:20px;
@@ -856,19 +713,11 @@ tr:hover{
         padding:18px;
         border-radius:14px;
     ">
-
-        <div style="
-            font-size:14px;
-            color:#334155;
-            line-height:1.8;
-        ">
-
-            Executive intelligence indicates stable operational performance
-            across most zones, although selected zones continue showing
-            elevated inactive meter trends requiring targeted intervention.
-
+        <div style="font-size:14px;color:#334155;line-height:1.8;">
+            Executive intelligence indicates stable operational performance across most zones.
+            Zones with inactive meters should be prioritized for field inspection,
+            billing verification, meter reconnection review, and NRW reduction.
         </div>
-
     </div>
 
 </div>
@@ -877,109 +726,54 @@ tr:hover{
 
 <div class="bottom-grid">
 
-    <!-- CUSTOMER EXPERIENCE -->
-
     <div class="card">
 
-        <div class="card-title">
-            Customer Experience
-        </div>
-
-        <div class="card-subtitle">
-            Service quality and complaint handling
-        </div>
+        <div class="card-title">Customer Experience</div>
+        <div class="card-subtitle">Service quality and complaint handling</div>
 
         <div class="progress-group">
-
             <div class="progress-row">
-
-                <span>
-                    Complaints Resolved
-                </span>
-
+                <span>Complaints Resolved</span>
                 <strong>87%</strong>
-
             </div>
 
             <div class="progress-bar">
-
-                <div class="progress-fill"
-                     style="width:87%;">
-
-                </div>
-
+                <div class="progress-fill" style="width:87%;"></div>
             </div>
-
         </div>
 
         <div class="progress-group">
-
             <div class="progress-row">
-
-                <span>
-                    Average Response Time
-                </span>
-
-                <strong>
-                    2.4 hrs
-                </strong>
-
+                <span>Average Response Time</span>
+                <strong>2.4 hrs</strong>
             </div>
-
         </div>
 
         <div class="progress-group">
-
             <div class="progress-row">
-
-                <span>
-                    Customer Satisfaction
-                </span>
-
-                <strong>
-                    91%
-                </strong>
-
+                <span>Customer Satisfaction</span>
+                <strong>91%</strong>
             </div>
-
         </div>
 
     </div>
 
-    <!-- EXECUTIVE SUMMARY -->
-
     <div class="card summary-card">
 
-        <div class="card-title"
-             style="color:white;">
-
+        <div class="card-title" style="color:white;">
             Executive Summary
-
         </div>
 
         <p>
-
-            • Revenue increased by 8%
-            compared to last month.<br><br>
-
-            • Non-Revenue Water reduced
-            in Wote Zone.<br><br>
-
-            • 3 critical leakages remain
-            unresolved in Kasarani.<br><br>
-
-            • 4 smart meters went offline
-            in Town zone.<br><br>
-
-            • Collection efficiency exceeded
-            target by 6%.
-
+            • Revenue currently stands at KES <?= number_format($totalRevenue); ?>.<br><br>
+            • <?= number_format($activeCount); ?> smart meters are active.<br><br>
+            • <?= number_format($inactiveCount); ?> smart meters require attention.<br><br>
+            • Collection efficiency is currently <?= $collectionRate; ?>%.<br><br>
+            • Estimated NRW exposure is <?= $nrw; ?>%.
         </p>
 
-        <button class="summary-btn">
-
+        <button class="summary-btn" onclick="showFullIntelligenceReport()">
             View Full Intelligence Report
-
         </button>
 
     </div>
@@ -988,17 +782,11 @@ tr:hover{
 
 <!-- ================= MODAL ================= -->
 
-<div id="modal"
-     class="modal">
+<div id="modal" class="modal">
 
     <div class="modal-content">
 
-        <span class="close-btn"
-              onclick="closeModal()">
-
-            ×
-
-        </span>
+        <span class="close-btn" onclick="closeModal()">×</span>
 
         <div id="modalBody"></div>
 
@@ -1012,14 +800,24 @@ tr:hover{
 
 /* ================= DATA ================= */
 
-const activeByZone =
-<?php echo json_encode($activeByZone); ?>;
+const activeByZone = <?php echo json_encode($activeByZone); ?>;
+const inactiveByZone = <?php echo json_encode($inactiveByZone); ?>;
+const zoneRevenue = <?php echo json_encode($zoneRevenue); ?>;
 
-const inactiveByZone =
-<?php echo json_encode($inactiveByZone); ?>;
-
-const zoneRevenue =
-<?php echo json_encode($zoneRevenue); ?>;
+const dashboardIntel = {
+    totalRevenue: <?= json_encode($totalRevenue); ?>,
+    totalMeters: <?= json_encode($totalMeters); ?>,
+    activeCount: <?= json_encode($activeCount); ?>,
+    inactiveCount: <?= json_encode($inactiveCount); ?>,
+    collectionRate: <?= json_encode($collectionRate); ?>,
+    nrw: <?= json_encode($nrw); ?>,
+    totalZones: <?= json_encode($totalZones); ?>,
+    healthyZones: <?= json_encode($healthyZones); ?>,
+    riskZones: <?= json_encode($riskZones); ?>,
+    criticalZones: <?= json_encode($criticalZones); ?>,
+    highestRevenueZone: <?= json_encode($highestRevenueZone); ?>,
+    reportDate: "<?= date('d M Y'); ?>"
+};
 
 /* ================= REVENUE DRILL ================= */
 
@@ -1027,9 +825,7 @@ function showRevenue(){
 
     let html = `
 
-    <h2>
-        Revenue Intelligence
-    </h2>
+    <h2>Revenue Intelligence</h2>
 
     <div class="drill-grid">
 
@@ -1041,44 +837,26 @@ function showRevenue(){
                     <h4>${zone}</h4>
 
                     <div class="drill-item">
-
                         Revenue:<br>
-
-                        <strong style="
-                            color:#166534;
-                            font-size:16px;
-                        ">
-
-                            KES ${
-                                Number(
-                                    zoneRevenue[zone]
-                                ).toLocaleString()
-                            }
-
+                        <strong style="color:#166534;font-size:16px;">
+                            KES ${Number(zoneRevenue[zone]).toLocaleString()}
                         </strong>
-
                     </div>
 
                     <div class="drill-item">
-
                         Active Meters:
-                        ${
-                            activeByZone[zone]
-                            ? activeByZone[zone].length
-                            : 0
-                        }
-
+                        ${activeByZone[zone] ? activeByZone[zone].length : 0}
                     </div>
 
                     <div class="drill-item">
-
                         Inactive Meters:
-                        ${
-                            inactiveByZone[zone]
-                            ? inactiveByZone[zone].length
-                            : 0
-                        }
+                        ${inactiveByZone[zone] ? inactiveByZone[zone].length : 0}
+                    </div>
 
+                    <div class="drill-item">
+                        <button class="action-btn" onclick="showZoneDetails('${zone}')">
+                            View Zone Details
+                        </button>
                     </div>
 
                 </div>
@@ -1090,32 +868,197 @@ function showRevenue(){
 
     `;
 
-    document.getElementById("modalBody")
-    .innerHTML = html;
+    document.getElementById("modalBody").innerHTML = html;
+    document.getElementById("modal").style.display = "block";
+}
 
-    document.getElementById("modal")
-    .style.display = "block";
+/* ================= FULL INTELLIGENCE REPORT ================= */
+
+function showFullIntelligenceReport(){
+
+    let zones = Object.keys(zoneRevenue);
+
+    let topZone = zones.length
+        ? zones.reduce((a,b) => Number(zoneRevenue[a]) > Number(zoneRevenue[b]) ? a : b)
+        : 'N/A';
+
+    let lowZone = zones.length
+        ? zones.reduce((a,b) => Number(zoneRevenue[a]) < Number(zoneRevenue[b]) ? a : b)
+        : 'N/A';
+
+    let totalRevenue = Number(dashboardIntel.totalRevenue || 0);
+
+    let meterRisk =
+        dashboardIntel.inactiveCount > 0
+        ? 'Inactive smart meters require field verification, billing validation, customer follow-up, and technical reconnection review.'
+        : 'No inactive smart meter risk has been detected from the current meter records.';
+
+    let collectionStatus =
+        dashboardIntel.collectionRate >= 80
+        ? 'Strong'
+        : dashboardIntel.collectionRate >= 60
+            ? 'Moderate'
+            : 'Weak';
+
+    let collectionBadge =
+        collectionStatus === 'Strong'
+        ? 'badge-green'
+        : collectionStatus === 'Moderate'
+            ? 'badge-yellow'
+            : 'badge-red';
+
+    let html = `
+
+        <h2>Full Executive Intelligence Report</h2>
+
+        <div class="drill-grid">
+
+            <div class="drill-card">
+                <h4>Report Snapshot</h4>
+                <div class="drill-item"><strong>Date:</strong> ${dashboardIntel.reportDate}</div>
+                <div class="drill-item"><strong>Total Revenue:</strong> KES ${totalRevenue.toLocaleString()}</div>
+                <div class="drill-item"><strong>Total Smart Meters:</strong> ${dashboardIntel.totalMeters.toLocaleString()}</div>
+                <div class="drill-item"><strong>Total Operational Zones:</strong> ${dashboardIntel.totalZones.toLocaleString()}</div>
+            </div>
+
+            <div class="drill-card">
+                <h4>Meter Operations</h4>
+                <div class="drill-item"><strong>Active Meters:</strong> ${dashboardIntel.activeCount.toLocaleString()}</div>
+                <div class="drill-item"><strong>Inactive Meters:</strong> ${dashboardIntel.inactiveCount.toLocaleString()}</div>
+                <div class="drill-item"><strong>Operational Risk:</strong> ${meterRisk}</div>
+            </div>
+
+            <div class="drill-card">
+                <h4>Revenue Intelligence</h4>
+                <div class="drill-item"><strong>Highest Revenue Zone:</strong> ${topZone}</div>
+                <div class="drill-item"><strong>Lowest Revenue Zone:</strong> ${lowZone}</div>
+                <div class="drill-item"><strong>Total Zone Revenue:</strong> KES ${totalRevenue.toLocaleString()}</div>
+            </div>
+
+            <div class="drill-card">
+                <h4>Collection Performance</h4>
+                <div class="drill-item">
+                    <strong>Collection Efficiency:</strong>
+                    <span class="badge ${collectionBadge}">${dashboardIntel.collectionRate}% - ${collectionStatus}</span>
+                </div>
+                <div class="drill-item"><strong>Estimated NRW Exposure:</strong> ${dashboardIntel.nrw}%</div>
+                <div class="drill-item"><strong>Focus:</strong> Improve billing accuracy, meter availability, and zone-level accountability.</div>
+            </div>
+
+        </div>
+
+        <div class="report-section">
+            <h3>Executive Interpretation</h3>
+
+            The current utility intelligence report shows total revenue of
+            <strong>KES ${totalRevenue.toLocaleString()}</strong>, supported by
+            <strong>${dashboardIntel.activeCount.toLocaleString()}</strong> active smart meters out of
+            <strong>${dashboardIntel.totalMeters.toLocaleString()}</strong> total active meter records.
+
+            <br><br>
+
+            Collection efficiency currently stands at
+            <strong>${dashboardIntel.collectionRate}%</strong>, which is classified as
+            <strong>${collectionStatus}</strong>. The highest performing revenue zone is
+            <strong>${topZone}</strong>, while <strong>${lowZone}</strong> requires closer review
+            for possible low billing activity, inactive meters, under-consumption, or delayed readings.
+
+            <br><br>
+
+            The dashboard indicates an estimated NRW exposure of
+            <strong>${dashboardIntel.nrw}%</strong>. Management should prioritize leakage tracking,
+            offline meter recovery, meter reading validation, and zone-level revenue assurance.
+        </div>
+
+        <h3 style="margin-top:25px;color:#0f172a;">Zone Performance Breakdown</h3>
+
+        <div class="table-wrapper">
+
+            <table>
+
+                <thead>
+                    <tr>
+                        <th>Zone</th>
+                        <th>Revenue</th>
+                        <th>Active Meters</th>
+                        <th>Inactive Meters</th>
+                        <th>Status</th>
+                        <th>Recommended Action</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    ${
+                        zones.map(zone => {
+
+                            let active = activeByZone[zone] ? activeByZone[zone].length : 0;
+                            let inactive = inactiveByZone[zone] ? inactiveByZone[zone].length : 0;
+                            let revenue = Number(zoneRevenue[zone] || 0);
+
+                            let status = inactive > active
+                                ? 'Critical'
+                                : inactive > 0
+                                    ? 'Watch'
+                                    : 'Stable';
+
+                            let badge = status === 'Critical'
+                                ? 'badge-red'
+                                : status === 'Watch'
+                                    ? 'badge-yellow'
+                                    : 'badge-green';
+
+                            let action = status === 'Critical'
+                                ? 'Dispatch technical team, inspect meters, validate readings, and review billing gaps.'
+                                : status === 'Watch'
+                                    ? 'Monitor inactive meters, verify consumption patterns, and follow up affected customers.'
+                                    : 'Maintain current controls and continue routine performance monitoring.';
+
+                            return `
+                                <tr>
+                                    <td><strong>${zone}</strong></td>
+                                    <td>KES ${revenue.toLocaleString()}</td>
+                                    <td>${active}</td>
+                                    <td>${inactive}</td>
+                                    <td><span class="badge ${badge}">${status}</span></td>
+                                    <td>${action}</td>
+                                </tr>
+                            `;
+                        }).join('')
+                    }
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+        <div class="report-section">
+            <h3>Management Recommendations</h3>
+
+            1. Prioritize inactive meter recovery in zones marked as <strong>Critical</strong> or <strong>Watch</strong>.<br>
+            2. Compare low-revenue zones against meter activity to detect billing gaps or consumption anomalies.<br>
+            3. Strengthen NRW controls through leakage response, meter audit, and zone-level water balance reviews.<br>
+            4. Use the highest revenue zone as a performance benchmark for other zones.<br>
+            5. Schedule routine intelligence reviews using updated readings, customer activity, and field reports.
+        </div>
+
+    `;
+
+    document.getElementById("modalBody").innerHTML = html;
+    document.getElementById("modal").style.display = "block";
 }
 
 /* ================= ZONE DETAILS ================= */
 
 function showZoneDetails(zone){
 
-    let active =
-    activeByZone[zone]
-    ? activeByZone[zone]
-    : [];
-
-    let inactive =
-    inactiveByZone[zone]
-    ? inactiveByZone[zone]
-    : [];
+    let active = activeByZone[zone] ? activeByZone[zone] : [];
+    let inactive = inactiveByZone[zone] ? inactiveByZone[zone] : [];
 
     let html = `
 
-    <h2>
-        ${zone} Zone Intelligence
-    </h2>
+    <h2>${zone} Zone Intelligence</h2>
 
     <div class="drill-grid">
 
@@ -1124,16 +1067,13 @@ function showZoneDetails(zone){
             <h4>Active Meters</h4>
 
             ${
-                active.map(m => `
-
+                active.length
+                ? active.map(m => `
                     <div class="drill-item">
-
-                        ${m.serial_number}
-                        — ${m.customer_name || 'N/A'}
-
+                        ${m.serial_number} — ${m.customer_name || 'N/A'}
                     </div>
-
                 `).join('')
+                : `<div class="drill-item">No active meters found.</div>`
             }
 
         </div>
@@ -1143,16 +1083,13 @@ function showZoneDetails(zone){
             <h4>Inactive Meters</h4>
 
             ${
-                inactive.map(m => `
-
+                inactive.length
+                ? inactive.map(m => `
                     <div class="drill-item">
-
-                        ${m.serial_number}
-                        — ${m.customer_name || 'N/A'}
-
+                        ${m.serial_number} — ${m.customer_name || 'N/A'}
                     </div>
-
                 `).join('')
+                : `<div class="drill-item">No inactive meters found.</div>`
             }
 
         </div>
@@ -1161,27 +1098,18 @@ function showZoneDetails(zone){
 
     `;
 
-    document.getElementById("modalBody")
-    .innerHTML = html;
-
-    document.getElementById("modal")
-    .style.display = "block";
+    document.getElementById("modalBody").innerHTML = html;
+    document.getElementById("modal").style.display = "block";
 }
 
 /* ================= METERS ================= */
 
 function showMeters(type){
 
-    let dataset =
-    type === 'active'
-    ? activeByZone
-    : inactiveByZone;
+    let dataset = type === 'active' ? activeByZone : inactiveByZone;
 
     let html = `
-        <h2>
-            ${type.toUpperCase()} METERS
-        </h2>
-
+        <h2>${type.toUpperCase()} METERS</h2>
         <div class="drill-grid">
     `;
 
@@ -1195,14 +1123,9 @@ function showMeters(type){
 
                 ${
                     dataset[zone].map(m => `
-
                         <div class="drill-item">
-
-                            ${m.serial_number}
-                            — ${m.customer_name || 'N/A'}
-
+                            ${m.serial_number} — ${m.customer_name || 'N/A'}
                         </div>
-
                     `).join('')
                 }
 
@@ -1213,28 +1136,21 @@ function showMeters(type){
 
     html += `</div>`;
 
-    document.getElementById("modalBody")
-    .innerHTML = html;
-
-    document.getElementById("modal")
-    .style.display = "block";
+    document.getElementById("modalBody").innerHTML = html;
+    document.getElementById("modal").style.display = "block";
 }
 
 /* ================= CLOSE ================= */
 
 function closeModal(){
-
-    document.getElementById("modal")
-    .style.display = "none";
+    document.getElementById("modal").style.display = "none";
 }
 
 window.onclick = function(e){
 
-    let modal =
-    document.getElementById("modal");
+    let modal = document.getElementById("modal");
 
     if(e.target == modal){
-
         closeModal();
     }
 }
@@ -1246,16 +1162,13 @@ new Chart(document.getElementById('revenueChart'), {
     type:'bar',
 
     data:{
-
         labels:[
             'Jan','Feb','Mar',
             'Apr','May','Jun'
         ],
 
         datasets:[{
-
             label:'Revenue',
-
             data:[
                 1200000,
                 1400000,
@@ -1264,10 +1177,8 @@ new Chart(document.getElementById('revenueChart'), {
                 2200000,
                 2500000
             ],
-
             backgroundColor:'#1e3a8a',
             borderRadius:8
-
         }]
     },
 
@@ -1281,6 +1192,7 @@ new Chart(document.getElementById('revenueChart'), {
             }
         }
     }
+
 });
 
 </script>

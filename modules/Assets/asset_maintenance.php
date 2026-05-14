@@ -661,11 +661,17 @@ body{
     margin-top:3px;
 }
 
+/* =========================================================
+   ACTION MENU FIX
+========================================================= */
+
 .action-wrapper{
     position:relative;
     display:flex;
     justify-content:center;
+    align-items:center;
     overflow:visible !important;
+    z-index:9999;
 }
 
 .action-btn{
@@ -677,51 +683,111 @@ body{
     border:1px solid #dbe2ea;
     cursor:pointer;
     font-size:22px;
+    font-weight:700;
+    color:#0f172a;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    transition:all .2s ease;
+}
+
+.action-btn:hover{
+    background:#f8fafc;
+    border-color:#cbd5e1;
 }
 
 .action-menu{
     display:none;
     position:absolute;
     right:0;
-    top:48px;
-    width:230px;
-    background:white;
+    top:52px;
+    min-width:240px;
+    background:#ffffff;
     border-radius:16px;
     overflow:hidden;
     border:1px solid #e2e8f0;
     box-shadow:0 20px 40px rgba(15,23,42,0.18);
     z-index:999999999 !important;
+    animation:fadeMenu .18s ease;
+}
+
+@keyframes fadeMenu{
+    from{
+        opacity:0;
+        transform:translateY(8px);
+    }
+    to{
+        opacity:1;
+        transform:translateY(0);
+    }
 }
 
 .action-menu button{
     width:100%;
-    padding:13px 16px;
+    padding:14px 18px;
     background:white;
     border:none;
     text-align:left;
     cursor:pointer;
     font-size:13px;
+    color:#334155;
+    transition:background .2s ease;
 }
 
 .action-menu button:hover{
     background:#f8fafc;
 }
 
-table.dataTable,
-.dataTables_wrapper,
-.card,
-table.dataTable tbody td,
-div.dt-container,
-div.dt-layout-row,
-div.dt-layout-table{
+/* =========================================================
+   DATATABLE OVERFLOW FIX
+========================================================= */
+
+.dataTables_wrapper{
+    overflow:visible !important;
+    position:relative !important;
+    z-index:1;
+}
+
+.dataTables_scroll,
+.dataTables_scrollBody,
+.dataTables_scrollHead,
+.dataTables_scrollFoot{
     overflow:visible !important;
 }
+
+table.dataTable{
+    overflow:visible !important;
+    position:relative;
+}
+
+table.dataTable tbody{
+    overflow:visible !important;
+}
+
+table.dataTable tbody tr{
+    overflow:visible !important;
+    position:relative;
+}
+
+table.dataTable tbody td{
+    overflow:visible !important;
+    position:relative;
+}
+
+.card{
+    overflow:visible !important;
+    position:relative;
+}
+
+/* LAST COLUMN */
 
 td:last-child,
 th:last-child{
     overflow:visible !important;
     width:90px !important;
     text-align:center !important;
+    position:relative;
+    z-index:999;
 }
 
 .modal{

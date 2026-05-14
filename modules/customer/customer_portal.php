@@ -22,12 +22,12 @@ $message = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_meter_application'])) {
 
     $application_ref = generateRef('MTRAPP');
-    $customer_name = trim($_POST['customer_name']);
-    $contact = trim($_POST['contact']);
-    $id_number = trim($_POST['id_number']);
-    $zone = trim($_POST['zone']);
-    $meter_type = trim($_POST['meter_type']);
-    $customer_type = trim($_POST['customer_type']);
+    $customer_name = trim($_POST['customer_name'] ?? '');
+    $contact = trim($_POST['contact'] ?? '');
+    $id_number = trim($_POST['id_number'] ?? '');
+    $zone = trim($_POST['zone'] ?? '');
+    $meter_type = trim($_POST['meter_type'] ?? '');
+    $customer_type = trim($_POST['customer_type'] ?? '');
 
     $check = $conn->prepare("SELECT id FROM meter_applications WHERE id_number=? LIMIT 1");
     $check->bind_param("s", $id_number);
@@ -228,49 +228,52 @@ $customerBills = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lookup_customer'])) {
 
-    $lookup = trim($_POST['lookup_value']);
+    $lookup = trim($_POST['lookup_value'] ?? '');
 
     $meterQuery = $conn->prepare("
         SELECT *
         FROM meters
-        WHERE 
-            serial_number = ?
-            OR customer_name LIKE ?
-            OR id_number = ?
-            OR phone = ?
-            OR contact = ?
+        WHERE serial_number = ?
+        OR national_id = ?
         ORDER BY id DESC
     ");
 
-    $likeLookup = "%$lookup%";
-    @$meterQuery->bind_param("sssss", $lookup, $likeLookup, $lookup, $lookup, $lookup);
-    @$meterQuery->execute();
-    $meterResult = @$meterQuery->get_result();
+    $meterQuery->bind_param("ss", $lookup, $lookup);
+    $meterQuery->execute();
+    $meterResult = $meterQuery->get_result();
+
+    $meterSerials = [];
 
     if ($meterResult) {
         while ($row = $meterResult->fetch_assoc()) {
             $customerMeters[] = $row;
+
+            if (!empty($row['serial_number'])) {
+                $meterSerials[] = $row['serial_number'];
+            }
         }
     }
 
-    $billQuery = $conn->prepare("
-        SELECT *
-        FROM bills
-        WHERE 
-            meter_serial = ?
-            OR id_number = ?
-            OR phone = ?
-            OR contact = ?
-        ORDER BY id DESC
-    ");
+    if (!empty($meterSerials)) {
 
-    @$billQuery->bind_param("ssss", $lookup, $lookup, $lookup, $lookup);
-    @$billQuery->execute();
-    $billResult = @$billQuery->get_result();
+        $placeholders = implode(',', array_fill(0, count($meterSerials), '?'));
+        $types = str_repeat('s', count($meterSerials));
 
-    if ($billResult) {
-        while ($row = $billResult->fetch_assoc()) {
-            $customerBills[] = $row;
+        $billQuery = $conn->prepare("
+            SELECT *
+            FROM bills
+            WHERE serial_number IN ($placeholders)
+            ORDER BY bill_month DESC, id DESC
+        ");
+
+        $billQuery->bind_param($types, ...$meterSerials);
+        $billQuery->execute();
+        $billResult = $billQuery->get_result();
+
+        if ($billResult) {
+            while ($row = $billResult->fetch_assoc()) {
+                $customerBills[] = $row;
+            }
         }
     }
 }
@@ -283,6 +286,20 @@ $rationing = $conn->query("
     WHERE status='Active'
     ORDER BY zone ASC, rationing_day ASC
 ");
+
+/* ================= ACTIVE TAB ================= */
+
+$activeTab = 'meterApplication';
+
+if (isset($_POST['submit_enquiry'])) {
+    $activeTab = 'enquiry';
+} elseif (isset($_POST['submit_complaint'])) {
+    $activeTab = 'complaint';
+} elseif (isset($_POST['lookup_customer'])) {
+    $activeTab = 'meterBills';
+} elseif (isset($_POST['track_request'])) {
+    $activeTab = 'tracking';
+}
 ?>
 
 <div class="page-content">
@@ -295,17 +312,15 @@ $rationing = $conn->query("
     <?= $message ?>
 
     <div class="portal-tabs">
-        <button class="tab-btn active" onclick="openPortalTab(event, 'meterApplication')">Meter Application</button>
-        <button class="tab-btn" onclick="openPortalTab(event, 'enquiry')">Enquiry</button>
-        <button class="tab-btn" onclick="openPortalTab(event, 'complaint')">Complaint</button>
-        <button class="tab-btn" onclick="openPortalTab(event, 'rationing')">Water Rationing</button>
-        <button class="tab-btn" onclick="openPortalTab(event, 'meterBills')">My Meter & Bills</button>
-        <button class="tab-btn" onclick="openPortalTab(event, 'tracking')">Track Request</button>
+        <button class="tab-btn <?= $activeTab === 'meterApplication' ? 'active' : '' ?>" onclick="openPortalTab(event, 'meterApplication')">Meter Application</button>
+        <button class="tab-btn <?= $activeTab === 'enquiry' ? 'active' : '' ?>" onclick="openPortalTab(event, 'enquiry')">Enquiry</button>
+        <button class="tab-btn <?= $activeTab === 'complaint' ? 'active' : '' ?>" onclick="openPortalTab(event, 'complaint')">Complaint</button>
+        <button class="tab-btn <?= $activeTab === 'rationing' ? 'active' : '' ?>" onclick="openPortalTab(event, 'rationing')">Water Rationing</button>
+        <button class="tab-btn <?= $activeTab === 'meterBills' ? 'active' : '' ?>" onclick="openPortalTab(event, 'meterBills')">My Meter & Bills</button>
+        <button class="tab-btn <?= $activeTab === 'tracking' ? 'active' : '' ?>" onclick="openPortalTab(event, 'tracking')">Track Request</button>
     </div>
 
-    <!-- ================= METER APPLICATION ================= -->
-
-    <div id="meterApplication" class="portal-section active">
+    <div id="meterApplication" class="portal-section <?= $activeTab === 'meterApplication' ? 'active' : '' ?>">
 
         <div class="section-header">
             <h3>Meter Application</h3>
@@ -327,7 +342,7 @@ $rationing = $conn->query("
                 </div>
 
                 <div class="form-group">
-                    <label>ID Number</label>
+                    <label>National ID Number</label>
                     <input type="text" name="id_number" required>
                 </div>
 
@@ -372,9 +387,7 @@ $rationing = $conn->query("
 
     </div>
 
-    <!-- ================= ENQUIRY ================= -->
-
-    <div id="enquiry" class="portal-section">
+    <div id="enquiry" class="portal-section <?= $activeTab === 'enquiry' ? 'active' : '' ?>">
 
         <div class="section-header">
             <h3>Submit Enquiry</h3>
@@ -433,9 +446,7 @@ $rationing = $conn->query("
 
     </div>
 
-    <!-- ================= COMPLAINT ================= -->
-
-    <div id="complaint" class="portal-section">
+    <div id="complaint" class="portal-section <?= $activeTab === 'complaint' ? 'active' : '' ?>">
 
         <div class="section-header">
             <h3>Submit Complaint</h3>
@@ -506,9 +517,7 @@ $rationing = $conn->query("
 
     </div>
 
-    <!-- ================= WATER RATIONING ================= -->
-
-    <div id="rationing" class="portal-section">
+    <div id="rationing" class="portal-section <?= $activeTab === 'rationing' ? 'active' : '' ?>">
 
         <div class="section-header">
             <h3>Water Rationing Schedule</h3>
@@ -550,21 +559,19 @@ $rationing = $conn->query("
 
     </div>
 
-    <!-- ================= MY METER & BILLS ================= -->
-
-    <div id="meterBills" class="portal-section">
+    <div id="meterBills" class="portal-section <?= $activeTab === 'meterBills' ? 'active' : '' ?>">
 
         <div class="section-header">
             <h3>My Meter & Bills</h3>
-            <p>Search using meter serial number, ID number, phone/contact, or customer name.</p>
+            <p>Enter either your meter serial number or national ID number to view your meter and billing details.</p>
         </div>
 
         <form method="POST" class="form-card">
 
             <div class="form-grid">
                 <div class="form-group full-width">
-                    <label>Search Value</label>
-                    <input type="text" name="lookup_value" required>
+                    <label>Meter Serial Number / National ID Number</label>
+                    <input type="text" name="lookup_value" required value="<?= clean($_POST['lookup_value'] ?? '') ?>">
                 </div>
             </div>
 
@@ -584,6 +591,9 @@ $rationing = $conn->query("
                         <tr>
                             <th>Serial Number</th>
                             <th>Customer</th>
+                            <th>National ID</th>
+                            <th>Phone</th>
+                            <th>Alternative Phone</th>
                             <th>Zone</th>
                             <th>Model</th>
                             <th>Status</th>
@@ -596,6 +606,9 @@ $rationing = $conn->query("
                                 <tr>
                                     <td><?= clean($m['serial_number'] ?? '') ?></td>
                                     <td><?= clean($m['customer_name'] ?? '') ?></td>
+                                    <td><?= clean($m['national_id'] ?? '') ?></td>
+                                    <td><?= clean($m['customer_phone'] ?? '') ?></td>
+                                    <td><?= clean($m['alternative_phone'] ?? '') ?></td>
                                     <td><?= clean($m['zone'] ?? '') ?></td>
                                     <td><?= clean($m['model'] ?? '') ?></td>
                                     <td><span class="status-badge"><?= clean($m['status'] ?? '') ?></span></td>
@@ -604,7 +617,7 @@ $rationing = $conn->query("
                             <?php endforeach; ?>
                         <?php else: ?>
                             <tr>
-                                <td colspan="6">No meter information found.</td>
+                                <td colspan="9">No meter information found for the entered meter serial or national ID.</td>
                             </tr>
                         <?php endif; ?>
                     </tbody>
@@ -619,25 +632,27 @@ $rationing = $conn->query("
                         <tr>
                             <th>Bill No</th>
                             <th>Meter Serial</th>
+                            <th>Bill Month</th>
                             <th>Amount</th>
                             <th>Status</th>
-                            <th>Billing Date</th>
+                            <th>Date Created</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (count($customerBills) > 0): ?>
                             <?php foreach ($customerBills as $b): ?>
                                 <tr>
-                                    <td><?= clean($b['bill_no'] ?? $b['id'] ?? '') ?></td>
-                                    <td><?= clean($b['meter_serial'] ?? '') ?></td>
-                                    <td>KSh <?= clean($b['amount'] ?? '0') ?></td>
+                                    <td><?= clean($b['id'] ?? '') ?></td>
+                                    <td><?= clean($b['serial_number'] ?? '') ?></td>
+                                    <td><?= clean($b['bill_month'] ?? '') ?></td>
+                                    <td>KSh <?= number_format((float)($b['amount'] ?? 0), 2) ?></td>
                                     <td><span class="status-badge"><?= clean($b['status'] ?? '') ?></span></td>
-                                    <td><?= clean($b['billing_date'] ?? $b['created_at'] ?? '') ?></td>
+                                    <td><?= clean($b['created_at'] ?? '') ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         <?php else: ?>
                             <tr>
-                                <td colspan="5">No billing information found.</td>
+                                <td colspan="6">No billing information found for the entered meter serial or national ID.</td>
                             </tr>
                         <?php endif; ?>
                     </tbody>
@@ -648,9 +663,7 @@ $rationing = $conn->query("
 
     </div>
 
-    <!-- ================= TRACKING ================= -->
-
-    <div id="tracking" class="portal-section">
+    <div id="tracking" class="portal-section <?= $activeTab === 'tracking' ? 'active' : '' ?>">
 
         <div class="section-header">
             <h3>Track Request</h3>
