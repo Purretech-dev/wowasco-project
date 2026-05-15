@@ -8,11 +8,17 @@ if (!isset($conn) || $conn->connect_error) {
 /* ================= HELPERS ================= */
 
 function clean($value) {
-    return htmlspecialchars(trim($value ?? ''), ENT_QUOTES, 'UTF-8');
+    return htmlspecialchars(trim((string)($value ?? '')), ENT_QUOTES, 'UTF-8');
 }
 
 function generateRef($prefix) {
     return $prefix . '-' . date('Ymd') . '-' . rand(1000, 9999);
+}
+
+function tableExists($conn, $table){
+    $table = $conn->real_escape_string($table);
+    $res = $conn->query("SHOW TABLES LIKE '$table'");
+    return $res && $res->num_rows > 0;
 }
 
 $message = "";
@@ -35,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_meter_applicat
     $exists = $check->get_result();
 
     if ($exists->num_rows > 0) {
-        $message = "<div class='alert error'>An application with this ID number already exists.</div>";
+        $message = "<div class='alert-card red'><strong>Duplicate Application</strong><br>An application with this ID number already exists.</div>";
     } else {
 
         $uploadPath = "";
@@ -48,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_meter_applicat
             $fileExt = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
 
             if (!in_array($fileExt, $allowedTypes)) {
-                $message = "<div class='alert error'>Only JPG, JPEG, PNG and PDF files are allowed.</div>";
+                $message = "<div class='alert-card red'><strong>Invalid Upload</strong><br>Only JPG, JPEG, PNG and PDF files are allowed.</div>";
             } else {
 
                 $uploadDir = __DIR__ . '/../../uploads/customer_ids/';
@@ -96,13 +102,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_meter_applicat
 
             if ($stmt->execute()) {
                 $message = "
-                    <div class='alert success'>
-                        Meter application submitted successfully. 
+                    <div class='alert-card green'>
+                        <strong>Meter application submitted successfully.</strong><br>
                         Reference Number: <strong>$application_ref</strong>
                     </div>
                 ";
             } else {
-                $message = "<div class='alert error'>Failed to submit meter application.</div>";
+                $message = "<div class='alert-card red'><strong>Submission Failed</strong><br>Failed to submit meter application.</div>";
             }
         }
     }
@@ -141,13 +147,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_enquiry'])) {
 
     if ($stmt->execute()) {
         $message = "
-            <div class='alert success'>
-                Enquiry submitted successfully. 
+            <div class='alert-card green'>
+                <strong>Enquiry submitted successfully.</strong><br>
                 Reference Number: <strong>$enquiry_ref</strong>
             </div>
         ";
     } else {
-        $message = "<div class='alert error'>Failed to submit enquiry.</div>";
+        $message = "<div class='alert-card red'><strong>Submission Failed</strong><br>Failed to submit enquiry.</div>";
     }
 }
 
@@ -186,13 +192,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
 
     if ($stmt->execute()) {
         $message = "
-            <div class='alert success'>
-                Complaint submitted successfully. 
+            <div class='alert-card green'>
+                <strong>Complaint submitted successfully.</strong><br>
                 Reference Number: <strong>$complaint_ref</strong>
             </div>
         ";
     } else {
-        $message = "<div class='alert error'>Failed to submit complaint.</div>";
+        $message = "<div class='alert-card red'><strong>Submission Failed</strong><br>Failed to submit complaint.</div>";
     }
 }
 
@@ -254,7 +260,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lookup_customer'])) {
         }
     }
 
-    if (!empty($meterSerials)) {
+    if (!empty($meterSerials) && tableExists($conn, 'bills')) {
 
         $placeholders = implode(',', array_fill(0, count($meterSerials), '?'));
         $types = str_repeat('s', count($meterSerials));
@@ -280,12 +286,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lookup_customer'])) {
 
 /* ================= WATER RATIONING ================= */
 
-$rationing = $conn->query("
-    SELECT *
-    FROM water_rationing_schedule
-    WHERE status='Active'
-    ORDER BY zone ASC, rationing_day ASC
-");
+$rationing = false;
+
+if (tableExists($conn, 'water_rationing_schedule')) {
+    $rationing = $conn->query("
+        SELECT *
+        FROM water_rationing_schedule
+        WHERE status='Active'
+        ORDER BY zone ASC, rationing_day ASC
+    ");
+}
+
+/* ================= COUNTS ================= */
+
+$totalApplications = tableExists($conn, 'meter_applications')
+    ? (int)$conn->query("SELECT COUNT(*) AS c FROM meter_applications")->fetch_assoc()['c']
+    : 0;
+
+$totalEnquiries = tableExists($conn, 'customer_enquiries')
+    ? (int)$conn->query("SELECT COUNT(*) AS c FROM customer_enquiries")->fetch_assoc()['c']
+    : 0;
+
+$totalComplaints = tableExists($conn, 'customer_complaints')
+    ? (int)$conn->query("SELECT COUNT(*) AS c FROM customer_complaints")->fetch_assoc()['c']
+    : 0;
+
+$activeRationing = tableExists($conn, 'water_rationing_schedule')
+    ? (int)$conn->query("SELECT COUNT(*) AS c FROM water_rationing_schedule WHERE status='Active'")->fetch_assoc()['c']
+    : 0;
 
 /* ================= ACTIVE TAB ================= */
 
@@ -302,483 +330,698 @@ if (isset($_POST['submit_enquiry'])) {
 }
 ?>
 
-<div class="page-content">
+<div class="container">
 
-    <div class="module-header">
-        <h2>Customer Portal</h2>
-        <p>Meter applications, enquiries, complaints, water rationing, meter details and billing information.</p>
+    <div class="page-header">
+        <div>
+            <h2>Customer Portal</h2>
+            <p>Applications, enquiries, complaints, rationing updates, customer meter details, billing and request tracking.</p>
+        </div>
+
+        <div class="header-badge">
+            Customer Service Center
+        </div>
     </div>
 
     <?= $message ?>
 
-    <div class="portal-tabs">
-        <button class="tab-btn <?= $activeTab === 'meterApplication' ? 'active' : '' ?>" onclick="openPortalTab(event, 'meterApplication')">Meter Application</button>
-        <button class="tab-btn <?= $activeTab === 'enquiry' ? 'active' : '' ?>" onclick="openPortalTab(event, 'enquiry')">Enquiry</button>
-        <button class="tab-btn <?= $activeTab === 'complaint' ? 'active' : '' ?>" onclick="openPortalTab(event, 'complaint')">Complaint</button>
-        <button class="tab-btn <?= $activeTab === 'rationing' ? 'active' : '' ?>" onclick="openPortalTab(event, 'rationing')">Water Rationing</button>
-        <button class="tab-btn <?= $activeTab === 'meterBills' ? 'active' : '' ?>" onclick="openPortalTab(event, 'meterBills')">My Meter & Bills</button>
-        <button class="tab-btn <?= $activeTab === 'tracking' ? 'active' : '' ?>" onclick="openPortalTab(event, 'tracking')">Track Request</button>
-    </div>
+    <div class="kpis">
 
-    <div id="meterApplication" class="portal-section <?= $activeTab === 'meterApplication' ? 'active' : '' ?>">
-
-        <div class="section-header">
-            <h3>Meter Application</h3>
-            <p>Fill in the form below to apply for a water meter connection.</p>
+        <div class="kpi blue">
+            <h3><?= number_format($totalApplications) ?></h3>
+            <p>Meter Applications</p>
+            <small>Customer connection requests</small>
         </div>
 
-        <form method="POST" enctype="multipart/form-data" class="form-card">
+        <div class="kpi">
+            <h3><?= number_format($totalEnquiries) ?></h3>
+            <p>Customer Enquiries</p>
+            <small>General support requests</small>
+        </div>
 
-            <div class="form-grid">
+        <div class="kpi red">
+            <h3><?= number_format($totalComplaints) ?></h3>
+            <p>Customer Complaints</p>
+            <small>Service issue reports</small>
+        </div>
 
-                <div class="form-group">
-                    <label>Customer Name</label>
-                    <input type="text" name="customer_name" required>
+        <div class="kpi yellow">
+            <h3><?= number_format($activeRationing) ?></h3>
+            <p>Active Rationing Notices</p>
+            <small>Published customer advisories</small>
+        </div>
+
+    </div>
+
+    <div class="filters portal-tabs">
+
+        <button type="button" class="tab-btn <?= $activeTab === 'meterApplication' ? 'active' : '' ?>" onclick="openPortalTab(event, 'meterApplication')">
+            Meter Application
+        </button>
+
+        <button type="button" class="tab-btn <?= $activeTab === 'enquiry' ? 'active' : '' ?>" onclick="openPortalTab(event, 'enquiry')">
+            Enquiry
+        </button>
+
+        <button type="button" class="tab-btn <?= $activeTab === 'complaint' ? 'active' : '' ?>" onclick="openPortalTab(event, 'complaint')">
+            Complaint
+        </button>
+
+        <button type="button" class="tab-btn <?= $activeTab === 'rationing' ? 'active' : '' ?>" onclick="openPortalTab(event, 'rationing')">
+            Water Rationing
+        </button>
+
+        <button type="button" class="tab-btn <?= $activeTab === 'meterBills' ? 'active' : '' ?>" onclick="openPortalTab(event, 'meterBills')">
+            My Meter & Bills
+        </button>
+
+        <button type="button" class="tab-btn <?= $activeTab === 'tracking' ? 'active' : '' ?>" onclick="openPortalTab(event, 'tracking')">
+            Track Request
+        </button>
+
+    </div>
+
+    <div class="grid">
+
+        <div class="panel">
+
+            <div id="meterApplication" class="portal-section <?= $activeTab === 'meterApplication' ? 'active' : '' ?>">
+
+                <h3 class="section-title">Meter Application</h3>
+
+                <div class="insight-box">
+                    Apply for a new water meter connection by filling in your details below.
+                    After submission, a reference number will be generated for tracking.
                 </div>
 
-                <div class="form-group">
-                    <label>Contact</label>
-                    <input type="text" name="contact" required>
-                </div>
+                <form method="POST" enctype="multipart/form-data" class="form-card">
 
-                <div class="form-group">
-                    <label>National ID Number</label>
-                    <input type="text" name="id_number" required>
-                </div>
+                    <div class="form-grid">
 
-                <div class="form-group">
-                    <label>Zone</label>
-                    <input type="text" name="zone" required>
-                </div>
+                        <div class="form-group">
+                            <label>Customer Name</label>
+                            <input type="text" name="customer_name" required>
+                        </div>
 
-                <div class="form-group">
-                    <label>Meter Type</label>
-                    <select name="meter_type" required>
-                        <option value="">Select Meter Type</option>
-                        <option value="Smart Meter">Smart Meter</option>
-                        <option value="Conventional">Conventional</option>
-                    </select>
-                </div>
+                        <div class="form-group">
+                            <label>Contact</label>
+                            <input type="text" name="contact" required>
+                        </div>
 
-                <div class="form-group">
-                    <label>Customer Type</label>
-                    <select name="customer_type" required>
-                        <option value="">Select Customer Type</option>
-                        <option value="Domestic">Domestic</option>
-                        <option value="Government Entities">Government Entities</option>
-                        <option value="Commercial">Commercial</option>
-                        <option value="Residential">Residential</option>
-                    </select>
-                </div>
+                        <div class="form-group">
+                            <label>National ID Number</label>
+                            <input type="text" name="id_number" required>
+                        </div>
 
-                <div class="form-group full-width">
-                    <label>Upload ID Copy</label>
-                    <input type="file" name="national_id_copy" accept=".jpg,.jpeg,.png,.pdf" required>
-                    <small>Allowed formats: JPG, JPEG, PNG, PDF.</small>
-                </div>
+                        <div class="form-group">
+                            <label>Zone</label>
+                            <input type="text" name="zone" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Meter Type</label>
+                            <select name="meter_type" required>
+                                <option value="">Select Meter Type</option>
+                                <option value="Smart Meter">Smart Meter</option>
+                                <option value="Conventional">Conventional</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Customer Type</label>
+                            <select name="customer_type" required>
+                                <option value="">Select Customer Type</option>
+                                <option value="Domestic">Domestic</option>
+                                <option value="Government Entities">Government Entities</option>
+                                <option value="Commercial">Commercial</option>
+                                <option value="Residential">Residential</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label>Upload ID Copy</label>
+                            <input type="file" name="national_id_copy" accept=".jpg,.jpeg,.png,.pdf" required>
+                            <small>Allowed formats: JPG, JPEG, PNG, PDF.</small>
+                        </div>
+
+                    </div>
+
+                    <button type="submit" name="submit_meter_application" class="btn">
+                        Submit Application
+                    </button>
+
+                </form>
 
             </div>
 
-            <button type="submit" name="submit_meter_application" class="submit-btn">
-                Submit Application
-            </button>
+            <div id="enquiry" class="portal-section <?= $activeTab === 'enquiry' ? 'active' : '' ?>">
 
-        </form>
+                <h3 class="section-title">Submit Enquiry</h3>
 
-    </div>
-
-    <div id="enquiry" class="portal-section <?= $activeTab === 'enquiry' ? 'active' : '' ?>">
-
-        <div class="section-header">
-            <h3>Submit Enquiry</h3>
-            <p>First-time and existing customers can submit enquiries here.</p>
-        </div>
-
-        <form method="POST" class="form-card">
-
-            <div class="form-grid">
-
-                <div class="form-group">
-                    <label>Customer Name</label>
-                    <input type="text" name="customer_name" required>
+                <div class="insight-box">
+                    Submit general enquiries about billing, water supply, meter application, sewerage or connection process.
                 </div>
 
-                <div class="form-group">
-                    <label>Contact</label>
-                    <input type="text" name="contact" required>
-                </div>
+                <form method="POST" class="form-card">
 
-                <div class="form-group">
-                    <label>Email</label>
-                    <input type="email" name="email">
-                </div>
+                    <div class="form-grid">
 
-                <div class="form-group">
-                    <label>Enquiry Type</label>
-                    <select name="enquiry_type" required>
-                        <option value="">Select Enquiry Type</option>
-                        <option>General Enquiry</option>
-                        <option>Meter Application</option>
-                        <option>Billing</option>
-                        <option>Water Supply</option>
-                        <option>Sewerage</option>
-                        <option>Connection Process</option>
-                    </select>
-                </div>
+                        <div class="form-group">
+                            <label>Customer Name</label>
+                            <input type="text" name="customer_name" required>
+                        </div>
 
-                <div class="form-group full-width">
-                    <label>Subject</label>
-                    <input type="text" name="subject" required>
-                </div>
+                        <div class="form-group">
+                            <label>Contact</label>
+                            <input type="text" name="contact" required>
+                        </div>
 
-                <div class="form-group full-width">
-                    <label>Message</label>
-                    <textarea name="message" required></textarea>
-                </div>
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input type="email" name="email">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Enquiry Type</label>
+                            <select name="enquiry_type" required>
+                                <option value="">Select Enquiry Type</option>
+                                <option>General Enquiry</option>
+                                <option>Meter Application</option>
+                                <option>Billing</option>
+                                <option>Water Supply</option>
+                                <option>Sewerage</option>
+                                <option>Connection Process</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label>Subject</label>
+                            <input type="text" name="subject" required>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label>Message</label>
+                            <textarea name="message" required></textarea>
+                        </div>
+
+                    </div>
+
+                    <button type="submit" name="submit_enquiry" class="btn">
+                        Submit Enquiry
+                    </button>
+
+                </form>
 
             </div>
 
-            <button type="submit" name="submit_enquiry" class="submit-btn">
-                Submit Enquiry
-            </button>
+            <div id="complaint" class="portal-section <?= $activeTab === 'complaint' ? 'active' : '' ?>">
 
-        </form>
+                <h3 class="section-title">Submit Complaint</h3>
 
-    </div>
-
-    <div id="complaint" class="portal-section <?= $activeTab === 'complaint' ? 'active' : '' ?>">
-
-        <div class="section-header">
-            <h3>Submit Complaint</h3>
-            <p>Existing customers can submit service-related complaints.</p>
-        </div>
-
-        <form method="POST" class="form-card">
-
-            <div class="form-grid">
-
-                <div class="form-group">
-                    <label>Customer Name</label>
-                    <input type="text" name="customer_name" required>
+                <div class="insight-box">
+                    Existing customers can report supply interruptions, billing issues, meter faults, wrong readings, leakages or sewerage issues.
                 </div>
 
-                <div class="form-group">
-                    <label>Contact</label>
-                    <input type="text" name="contact" required>
-                </div>
+                <form method="POST" class="form-card">
 
-                <div class="form-group">
-                    <label>Meter Serial Number</label>
-                    <input type="text" name="meter_serial">
-                </div>
+                    <div class="form-grid">
 
-                <div class="form-group">
-                    <label>Zone</label>
-                    <input type="text" name="zone">
-                </div>
+                        <div class="form-group">
+                            <label>Customer Name</label>
+                            <input type="text" name="customer_name" required>
+                        </div>
 
-                <div class="form-group">
-                    <label>Complaint Type</label>
-                    <select name="complaint_type" required>
-                        <option value="">Select Complaint Type</option>
-                        <option>Water Supply Interruption</option>
-                        <option>Billing Issue</option>
-                        <option>Meter Fault</option>
-                        <option>Wrong Meter Reading</option>
-                        <option>Leakage</option>
-                        <option>Sewerage Issue</option>
-                        <option>Staff Conduct</option>
-                        <option>Other</option>
-                    </select>
-                </div>
+                        <div class="form-group">
+                            <label>Contact</label>
+                            <input type="text" name="contact" required>
+                        </div>
 
-                <div class="form-group">
-                    <label>Priority</label>
-                    <select name="priority" required>
-                        <option>Low</option>
-                        <option selected>Medium</option>
-                        <option>High</option>
-                        <option>Critical</option>
-                    </select>
-                </div>
+                        <div class="form-group">
+                            <label>Meter Serial Number</label>
+                            <input type="text" name="meter_serial">
+                        </div>
 
-                <div class="form-group full-width">
-                    <label>Description</label>
-                    <textarea name="description" required></textarea>
-                </div>
+                        <div class="form-group">
+                            <label>Zone</label>
+                            <input type="text" name="zone">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Complaint Type</label>
+                            <select name="complaint_type" required>
+                                <option value="">Select Complaint Type</option>
+                                <option>Water Supply Interruption</option>
+                                <option>Billing Issue</option>
+                                <option>Meter Fault</option>
+                                <option>Wrong Meter Reading</option>
+                                <option>Leakage</option>
+                                <option>Sewerage Issue</option>
+                                <option>Staff Conduct</option>
+                                <option>Other</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Priority</label>
+                            <select name="priority" required>
+                                <option>Low</option>
+                                <option selected>Medium</option>
+                                <option>High</option>
+                                <option>Critical</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label>Description</label>
+                            <textarea name="description" required></textarea>
+                        </div>
+
+                    </div>
+
+                    <button type="submit" name="submit_complaint" class="btn">
+                        Submit Complaint
+                    </button>
+
+                </form>
 
             </div>
 
-            <button type="submit" name="submit_complaint" class="submit-btn">
-                Submit Complaint
-            </button>
+            <div id="rationing" class="portal-section <?= $activeTab === 'rationing' ? 'active' : '' ?>">
 
-        </form>
+                <h3 class="section-title">Water Rationing Schedule</h3>
 
-    </div>
+                <div class="table-wrapper">
 
-    <div id="rationing" class="portal-section <?= $activeTab === 'rationing' ? 'active' : '' ?>">
-
-        <div class="section-header">
-            <h3>Water Rationing Schedule</h3>
-            <p>View active water rationing notices by zone.</p>
-        </div>
-
-        <div class="table-card">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Zone</th>
-                        <th>Day</th>
-                        <th>Start Time</th>
-                        <th>End Time</th>
-                        <th>Notice</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if ($rationing && $rationing->num_rows > 0): ?>
-                        <?php while ($r = $rationing->fetch_assoc()): ?>
+                    <table>
+                        <thead>
                             <tr>
-                                <td><?= clean($r['zone']) ?></td>
-                                <td><?= clean($r['rationing_day']) ?></td>
-                                <td><?= clean($r['start_time']) ?></td>
-                                <td><?= clean($r['end_time']) ?></td>
-                                <td><?= clean($r['notice']) ?></td>
-                                <td><span class="status-badge"><?= clean($r['status']) ?></span></td>
+                                <th>Zone</th>
+                                <th>Day</th>
+                                <th>Start Time</th>
+                                <th>End Time</th>
+                                <th>Notice</th>
+                                <th>Status</th>
                             </tr>
-                        <?php endwhile; ?>
-                    <?php else: ?>
-                        <tr>
-                            <td colspan="6">No active water rationing schedule available.</td>
-                        </tr>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
+                        </thead>
 
-    </div>
-
-    <div id="meterBills" class="portal-section <?= $activeTab === 'meterBills' ? 'active' : '' ?>">
-
-        <div class="section-header">
-            <h3>My Meter & Bills</h3>
-            <p>Enter either your meter serial number or national ID number to view your meter and billing details.</p>
-        </div>
-
-        <form method="POST" class="form-card">
-
-            <div class="form-grid">
-                <div class="form-group full-width">
-                    <label>Meter Serial Number / National ID Number</label>
-                    <input type="text" name="lookup_value" required value="<?= clean($_POST['lookup_value'] ?? '') ?>">
-                </div>
-            </div>
-
-            <button type="submit" name="lookup_customer" class="submit-btn">
-                Search My Information
-            </button>
-
-        </form>
-
-        <?php if (isset($_POST['lookup_customer'])): ?>
-
-            <div class="table-card">
-                <h4>Meter Information</h4>
-
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Serial Number</th>
-                            <th>Customer</th>
-                            <th>National ID</th>
-                            <th>Phone</th>
-                            <th>Alternative Phone</th>
-                            <th>Zone</th>
-                            <th>Model</th>
-                            <th>Status</th>
-                            <th>Installation Date</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (count($customerMeters) > 0): ?>
-                            <?php foreach ($customerMeters as $m): ?>
+                        <tbody>
+                            <?php if ($rationing && $rationing->num_rows > 0): ?>
+                                <?php while ($r = $rationing->fetch_assoc()): ?>
+                                    <tr>
+                                        <td><?= clean($r['zone']) ?></td>
+                                        <td><?= clean($r['rationing_day']) ?></td>
+                                        <td><?= clean($r['start_time']) ?></td>
+                                        <td><?= clean($r['end_time']) ?></td>
+                                        <td><?= clean($r['notice']) ?></td>
+                                        <td><span class="badge good"><?= clean($r['status']) ?></span></td>
+                                    </tr>
+                                <?php endwhile; ?>
+                            <?php else: ?>
                                 <tr>
-                                    <td><?= clean($m['serial_number'] ?? '') ?></td>
-                                    <td><?= clean($m['customer_name'] ?? '') ?></td>
-                                    <td><?= clean($m['national_id'] ?? '') ?></td>
-                                    <td><?= clean($m['customer_phone'] ?? '') ?></td>
-                                    <td><?= clean($m['alternative_phone'] ?? '') ?></td>
-                                    <td><?= clean($m['zone'] ?? '') ?></td>
-                                    <td><?= clean($m['model'] ?? '') ?></td>
-                                    <td><span class="status-badge"><?= clean($m['status'] ?? '') ?></span></td>
-                                    <td><?= clean($m['installation_date'] ?? '') ?></td>
+                                    <td colspan="6">No active water rationing schedule available.</td>
                                 </tr>
-                            <?php endforeach; ?>
-                        <?php else: ?>
-                            <tr>
-                                <td colspan="9">No meter information found for the entered meter serial or national ID.</td>
-                            </tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
 
-            <div class="table-card">
-                <h4>Billing Information</h4>
-
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Bill No</th>
-                            <th>Meter Serial</th>
-                            <th>Bill Month</th>
-                            <th>Amount</th>
-                            <th>Status</th>
-                            <th>Date Created</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (count($customerBills) > 0): ?>
-                            <?php foreach ($customerBills as $b): ?>
-                                <tr>
-                                    <td><?= clean($b['id'] ?? '') ?></td>
-                                    <td><?= clean($b['serial_number'] ?? '') ?></td>
-                                    <td><?= clean($b['bill_month'] ?? '') ?></td>
-                                    <td>KSh <?= number_format((float)($b['amount'] ?? 0), 2) ?></td>
-                                    <td><span class="status-badge"><?= clean($b['status'] ?? '') ?></span></td>
-                                    <td><?= clean($b['created_at'] ?? '') ?></td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php else: ?>
-                            <tr>
-                                <td colspan="6">No billing information found for the entered meter serial or national ID.</td>
-                            </tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
-
-        <?php endif; ?>
-
-    </div>
-
-    <div id="tracking" class="portal-section <?= $activeTab === 'tracking' ? 'active' : '' ?>">
-
-        <div class="section-header">
-            <h3>Track Request</h3>
-            <p>Track your meter application, enquiry, or complaint using your reference number.</p>
-        </div>
-
-        <form method="POST" class="form-card">
-
-            <div class="form-grid">
-                <div class="form-group full-width">
-                    <label>Reference Number</label>
-                    <input type="text" name="reference_number" placeholder="Example: MTRAPP-20260513-1234" required>
                 </div>
+
             </div>
 
-            <button type="submit" name="track_request" class="submit-btn">
-                Track Request
-            </button>
+            <div id="meterBills" class="portal-section <?= $activeTab === 'meterBills' ? 'active' : '' ?>">
 
-        </form>
+                <h3 class="section-title">My Meter & Bills</h3>
 
-        <?php if (isset($_POST['track_request'])): ?>
+                <div class="insight-box">
+                    Search using your meter serial number or national ID number to view your registered meter and billing information.
+                </div>
 
-            <div class="tracking-card">
+                <form method="POST" class="form-card">
 
-                <?php if ($trackingResult): ?>
+                    <div class="form-grid">
+                        <div class="form-group full-width">
+                            <label>Meter Serial Number / National ID Number</label>
+                            <input type="text" name="lookup_value" required value="<?= clean($_POST['lookup_value'] ?? '') ?>">
+                        </div>
+                    </div>
 
-                    <h4><?= clean($trackingType) ?> Status</h4>
+                    <button type="submit" name="lookup_customer" class="btn">
+                        Search My Information
+                    </button>
 
-                    <p>
-                        <strong>Status:</strong>
-                        <span class="status-badge"><?= clean($trackingResult['status'] ?? '') ?></span>
-                    </p>
+                </form>
 
-                    <?php if (!empty($trackingResult['response'])): ?>
-                        <p><strong>Response:</strong> <?= clean($trackingResult['response']) ?></p>
-                    <?php endif; ?>
+                <?php if (isset($_POST['lookup_customer'])): ?>
 
-                    <?php if (!empty($trackingResult['remarks'])): ?>
-                        <p><strong>Remarks:</strong> <?= clean($trackingResult['remarks']) ?></p>
-                    <?php endif; ?>
+                    <h3 class="section-title">Meter Information</h3>
 
-                    <p><strong>Date Submitted:</strong> <?= clean($trackingResult['created_at'] ?? '') ?></p>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Serial Number</th>
+                                    <th>Customer</th>
+                                    <th>National ID</th>
+                                    <th>Phone</th>
+                                    <th>Alternative Phone</th>
+                                    <th>Zone</th>
+                                    <th>Model</th>
+                                    <th>Status</th>
+                                    <th>Installation Date</th>
+                                </tr>
+                            </thead>
 
-                <?php else: ?>
+                            <tbody>
+                                <?php if (count($customerMeters) > 0): ?>
+                                    <?php foreach ($customerMeters as $m): ?>
+                                        <tr>
+                                            <td><strong><?= clean($m['serial_number'] ?? '') ?></strong></td>
+                                            <td><?= clean($m['customer_name'] ?? '') ?></td>
+                                            <td><?= clean($m['national_id'] ?? '') ?></td>
+                                            <td><?= clean($m['customer_phone'] ?? '') ?></td>
+                                            <td><?= clean($m['alternative_phone'] ?? '') ?></td>
+                                            <td><?= clean($m['zone'] ?? '') ?></td>
+                                            <td><?= clean($m['model'] ?? '') ?></td>
+                                            <td><span class="badge good"><?= clean($m['status'] ?? '') ?></span></td>
+                                            <td><?= clean($m['installation_date'] ?? '') ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <tr>
+                                        <td colspan="9">No meter information found for the entered meter serial or national ID.</td>
+                                    </tr>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
 
-                    <p>No request found with that reference number.</p>
+                    <h3 class="section-title" style="margin-top:20px;">Billing Information</h3>
+
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Bill No</th>
+                                    <th>Meter Serial</th>
+                                    <th>Bill Month</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Date Created</th>
+                                </tr>
+                            </thead>
+
+                            <tbody>
+                                <?php if (count($customerBills) > 0): ?>
+                                    <?php foreach ($customerBills as $b): ?>
+                                        <tr>
+                                            <td><?= clean($b['id'] ?? '') ?></td>
+                                            <td><?= clean($b['serial_number'] ?? '') ?></td>
+                                            <td><?= clean($b['bill_month'] ?? '') ?></td>
+                                            <td><strong>KSh <?= number_format((float)($b['amount'] ?? 0), 2) ?></strong></td>
+                                            <td><span class="badge warning"><?= clean($b['status'] ?? '') ?></span></td>
+                                            <td><?= clean($b['created_at'] ?? '') ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <tr>
+                                        <td colspan="6">No billing information found for the entered meter serial or national ID.</td>
+                                    </tr>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
 
                 <?php endif; ?>
 
             </div>
 
-        <?php endif; ?>
+            <div id="tracking" class="portal-section <?= $activeTab === 'tracking' ? 'active' : '' ?>">
+
+                <h3 class="section-title">Track Request</h3>
+
+                <div class="insight-box">
+                    Use your reference number to track a meter application, enquiry or complaint.
+                </div>
+
+                <form method="POST" class="form-card">
+
+                    <div class="form-grid">
+                        <div class="form-group full-width">
+                            <label>Reference Number</label>
+                            <input type="text" name="reference_number" placeholder="Example: MTRAPP-20260513-1234" required>
+                        </div>
+                    </div>
+
+                    <button type="submit" name="track_request" class="btn">
+                        Track Request
+                    </button>
+
+                </form>
+
+                <?php if (isset($_POST['track_request'])): ?>
+
+                    <div class="insight-box">
+
+                        <?php if ($trackingResult): ?>
+
+                            <strong><?= clean($trackingType) ?> Status</strong><br><br>
+
+                            Status:
+                            <span class="badge good"><?= clean($trackingResult['status'] ?? '') ?></span>
+
+                            <br><br>
+
+                            <?php if (!empty($trackingResult['response'])): ?>
+                                <strong>Response:</strong> <?= clean($trackingResult['response']) ?><br><br>
+                            <?php endif; ?>
+
+                            <?php if (!empty($trackingResult['remarks'])): ?>
+                                <strong>Remarks:</strong> <?= clean($trackingResult['remarks']) ?><br><br>
+                            <?php endif; ?>
+
+                            <strong>Date Submitted:</strong> <?= clean($trackingResult['created_at'] ?? '') ?>
+
+                        <?php else: ?>
+
+                            No request found with that reference number.
+
+                        <?php endif; ?>
+
+                    </div>
+
+                <?php endif; ?>
+
+            </div>
+
+        </div>
+
+        <div class="panel">
+
+            <h3 class="section-title">Customer Service Alerts</h3>
+
+            <?php if($totalComplaints > 0): ?>
+                <div class="alert-card red">
+                    <strong><?= number_format($totalComplaints) ?> complaint(s) recorded.</strong><br>
+                    Review service issues and prioritize critical complaints.
+                </div>
+            <?php endif; ?>
+
+            <?php if($totalApplications > 0): ?>
+                <div class="alert-card blue">
+                    <strong><?= number_format($totalApplications) ?> meter application(s) recorded.</strong><br>
+                    Ensure pending applications are reviewed and assigned.
+                </div>
+            <?php endif; ?>
+
+            <?php if($totalEnquiries > 0): ?>
+                <div class="alert-card">
+                    <strong><?= number_format($totalEnquiries) ?> enquiry request(s) recorded.</strong><br>
+                    Respond to customer enquiries within the expected service timeline.
+                </div>
+            <?php endif; ?>
+
+            <?php if($activeRationing > 0): ?>
+                <div class="alert-card">
+                    <strong><?= number_format($activeRationing) ?> active rationing notice(s).</strong><br>
+                    Customers should check the rationing tab for affected zones.
+                </div>
+            <?php endif; ?>
+
+            <?php if($totalComplaints == 0 && $totalApplications == 0 && $totalEnquiries == 0 && $activeRationing == 0): ?>
+                <div class="alert-card green">
+                    <strong>No major customer service alerts.</strong><br>
+                    Customer portal activity is currently low.
+                </div>
+            <?php endif; ?>
+
+            <div class="insight-box">
+
+                <strong>Portal Insight</strong><br><br>
+
+                This portal enables customers to submit applications, enquiries and complaints,
+                view active water rationing notices, search meter and billing details, and track requests using generated reference numbers.
+
+            </div>
+
+            <div class="insight-box">
+
+                <strong>Recommended Operational Actions</strong><br><br>
+
+                1. Review new meter applications daily.<br>
+                2. Prioritize high and critical complaints.<br>
+                3. Keep rationing schedules updated.<br>
+                4. Use reference numbers to improve follow-up.<br>
+                5. Ensure customer billing records remain accurate.
+
+            </div>
+
+        </div>
 
     </div>
 
 </div>
 
 <style>
-.page-content{
-    margin-left:260px;
-    margin-top:75px;
-    margin-bottom:60px;
-    padding:20px;
-    background:#f4f7fb;
-    min-height:calc(100vh - 135px);
-    font-family:Arial, sans-serif;
-}
-
-.module-header{
-    background:#ffffff;
-    padding:18px 20px;
-    border-radius:10px;
-    margin-bottom:18px;
-    border-left:4px solid #0a2a43;
-    box-shadow:0 2px 6px rgba(0,0,0,0.05);
-}
-
-.module-header h2{
+body{
     margin:0;
-    color:#0a2a43;
-    font-size:20px;
+    background:#f8fafc;
+    font-family:'Segoe UI',sans-serif;
+    color:#1e293b;
 }
 
-.module-header p{
+.container{
+    margin-left:240px;
+    margin-top:80px;
+    padding:24px;
+}
+
+.page-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:15px;
+    flex-wrap:wrap;
+    margin-bottom:22px;
+}
+
+.page-header h2{
+    margin:0;
+    font-size:26px;
+    font-weight:800;
+    color:#0f172a;
+}
+
+.page-header p{
     margin:6px 0 0;
+    font-size:13px;
     color:#64748b;
-    font-size:14px;
+}
+
+.header-badge{
+    background:#ecfdf3;
+    color:#15803d;
+    border:1px solid #bbf7d0;
+    padding:10px 14px;
+    border-radius:12px;
+    font-size:13px;
+    font-weight:700;
+}
+
+.section-title{
+    margin:0 0 14px;
+    font-size:16px;
+    font-weight:800;
+    color:#0f172a;
+}
+
+.kpis{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+    gap:18px;
+}
+
+.kpi{
+    background:white;
+    border-radius:16px;
+    padding:20px;
+    border:1px solid #e2e8f0;
+    border-left:5px solid #1e7d4f;
+    box-shadow:0 4px 14px rgba(15,23,42,0.04);
+}
+
+.kpi.blue{ border-left-color:#1e3a8a; }
+.kpi.yellow{ border-left-color:#eab308; }
+.kpi.red{ border-left-color:#dc2626; }
+
+.kpi h3{
+    margin:0;
+    font-size:30px;
+    color:#0f172a;
+}
+
+.kpi p{
+    margin:8px 0 0;
+    font-size:13px;
+    color:#64748b;
+    font-weight:700;
+}
+
+.kpi small{
+    display:block;
+    margin-top:8px;
+    color:#94a3b8;
+    font-size:12px;
+}
+
+.filters{
+    margin-top:24px;
+    background:white;
+    padding:18px;
+    border-radius:16px;
+    border:1px solid #e2e8f0;
+    display:flex;
+    gap:12px;
+    flex-wrap:wrap;
+    align-items:center;
 }
 
 .portal-tabs{
-    background:#ffffff;
-    padding:12px;
-    border-radius:10px;
-    display:flex;
-    flex-wrap:wrap;
-    gap:8px;
-    margin-bottom:18px;
-    box-shadow:0 2px 6px rgba(0,0,0,0.05);
+    margin-bottom:0;
 }
 
 .tab-btn{
-    border:1px solid #d1d5db;
-    background:#ffffff;
+    padding:11px 16px;
+    border:none;
+    border-radius:10px;
+    background:#f8fafc;
     color:#334155;
-    padding:8px 12px;
-    border-radius:6px;
-    font-size:13px;
     cursor:pointer;
+    font-weight:700;
+    text-decoration:none;
+    font-size:13px;
+    display:inline-block;
+    border:1px solid #dbe2ea;
 }
 
 .tab-btn.active{
-    background:#0a2a43;
+    background:#1e7d4f;
     color:#ffffff;
-    border-color:#0a2a43;
+    border-color:#1e7d4f;
+}
+
+.grid{
+    display:grid;
+    grid-template-columns:1fr 360px;
+    gap:20px;
+    margin-top:24px;
+}
+
+.panel{
+    background:white;
+    border-radius:16px;
+    border:1px solid #e2e8f0;
+    padding:20px;
+    box-shadow:0 4px 14px rgba(15,23,42,0.03);
 }
 
 .portal-section{
@@ -789,41 +1032,14 @@ if (isset($_POST['submit_enquiry'])) {
     display:block;
 }
 
-.section-header{
-    background:#ffffff;
-    padding:16px 18px;
-    border-radius:10px;
-    margin-bottom:14px;
-    border:1px solid #e5e7eb;
-}
-
-.section-header h3{
-    margin:0;
-    color:#0a2a43;
-    font-size:18px;
-}
-
-.section-header p{
-    margin:5px 0 0;
-    color:#64748b;
-    font-size:14px;
-}
-
-.form-card,
-.table-card,
-.tracking-card{
-    background:#ffffff;
-    padding:18px;
-    border-radius:10px;
-    border:1px solid #e5e7eb;
-    margin-bottom:18px;
-    box-shadow:0 2px 6px rgba(0,0,0,0.04);
+.form-card{
+    margin-top:14px;
 }
 
 .form-grid{
     display:grid;
     grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
-    gap:15px;
+    gap:14px;
 }
 
 .form-group{
@@ -835,17 +1051,18 @@ if (isset($_POST['submit_enquiry'])) {
     margin-bottom:6px;
     color:#334155;
     font-size:13px;
-    font-weight:600;
+    font-weight:700;
 }
 
 .form-group input,
 .form-group select,
 .form-group textarea{
-    padding:10px;
-    border:1px solid #d1d5db;
-    border-radius:6px;
-    font-size:14px;
-    background:#ffffff;
+    padding:11px 12px;
+    border-radius:10px;
+    border:1px solid #dbe2ea;
+    font-size:13px;
+    background:white;
+    color:#1e293b;
 }
 
 .form-group textarea{
@@ -853,100 +1070,169 @@ if (isset($_POST['submit_enquiry'])) {
     resize:vertical;
 }
 
-.form-group small{
-    color:#64748b;
-    font-size:12px;
-    margin-top:5px;
-}
-
 .form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus{
     outline:none;
-    border-color:#0a2a43;
+    border-color:#1e7d4f;
+}
+
+.form-group small{
+    margin-top:6px;
+    color:#64748b;
+    font-size:12px;
 }
 
 .full-width{
     grid-column:1/-1;
 }
 
-.submit-btn{
-    margin-top:18px;
-    background:#0a2a43;
-    color:white;
+button,
+.btn{
+    padding:11px 16px;
     border:none;
-    padding:9px 15px;
-    border-radius:6px;
-    font-size:14px;
+    border-radius:10px;
+    background:#1e7d4f;
+    color:white;
     cursor:pointer;
+    font-weight:700;
+    text-decoration:none;
+    font-size:13px;
+    display:inline-block;
+    margin-top:14px;
 }
 
-.submit-btn:hover{
-    background:#123a5a;
+.btn-blue{
+    background:#1e3a8a;
 }
 
-.alert{
-    padding:12px 15px;
-    border-radius:8px;
-    margin-bottom:18px;
-    font-size:14px;
+.btn-light{
+    background:#f8fafc;
+    color:#334155;
+    border:1px solid #dbe2ea;
 }
 
-.alert.success{
-    background:#f0fdf4;
-    color:#166534;
-    border-left:4px solid #16a34a;
-}
-
-.alert.error{
-    background:#fef2f2;
-    color:#991b1b;
-    border-left:4px solid #dc2626;
-}
-
-.table-card{
+.table-wrapper{
     overflow-x:auto;
-}
-
-.table-card h4,
-.tracking-card h4{
-    margin-top:0;
-    color:#0a2a43;
+    margin-top:14px;
 }
 
 table{
     width:100%;
     border-collapse:collapse;
-    font-size:14px;
 }
 
 th{
     background:#f8fafc;
     color:#334155;
+    padding:14px;
     text-align:left;
-    padding:10px;
-    border-bottom:1px solid #e5e7eb;
+    font-size:13px;
+    border-bottom:2px solid #e2e8f0;
+    white-space:nowrap;
 }
 
 td{
-    padding:10px;
-    border-bottom:1px solid #e5e7eb;
-    color:#334155;
+    padding:14px;
+    border-bottom:1px solid #f1f5f9;
+    font-size:13px;
+    vertical-align:top;
 }
 
-.status-badge{
-    display:inline-block;
-    padding:4px 8px;
+tr:hover td{
+    background:#fcfcfc;
+}
+
+.badge{
+    padding:6px 11px;
     border-radius:20px;
     font-size:12px;
-    background:#f1f5f9;
-    color:#334155;
-    border:1px solid #cbd5e1;
+    font-weight:800;
+    display:inline-block;
+}
+
+.critical{
+    background:#fef2f2;
+    color:#dc2626;
+}
+
+.warning{
+    background:#fffbeb;
+    color:#ca8a04;
+}
+
+.good{
+    background:#ecfdf3;
+    color:#15803d;
+}
+
+.alert-card{
+    border-left:4px solid #facc15;
+    padding:14px;
+    border-radius:12px;
+    margin-bottom:12px;
+    font-size:13px;
+    background:#fffbeb;
+    color:#713f12;
+}
+
+.alert-card.red{
+    background:#fef2f2;
+    color:#991b1b;
+    border-left-color:#dc2626;
+}
+
+.alert-card.green{
+    background:#ecfdf3;
+    color:#166534;
+    border-left-color:#22c55e;
+}
+
+.alert-card.blue{
+    background:#eff6ff;
+    color:#1e3a8a;
+    border-left-color:#1e3a8a;
+}
+
+.insight-box{
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+    padding:14px;
+    border-radius:12px;
+    margin-top:14px;
+    font-size:13px;
+    color:#475569;
+    line-height:1.7;
+}
+
+@media(max-width:1000px){
+
+    .grid{
+        grid-template-columns:1fr;
+    }
+
+    .container{
+        margin-left:0;
+    }
+
+    .form-grid{
+        grid-template-columns:1fr;
+    }
+
+    .filters{
+        flex-direction:column;
+        align-items:stretch;
+    }
+
+    .tab-btn{
+        width:100%;
+    }
 }
 </style>
 
 <script>
 function openPortalTab(evt, tabName){
+
     let sections = document.getElementsByClassName("portal-section");
     let buttons = document.getElementsByClassName("tab-btn");
 

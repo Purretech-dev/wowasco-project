@@ -1,3 +1,4 @@
+```php
 <?php
 require_once __DIR__ . '/../../api/db.php';
 
@@ -12,29 +13,68 @@ function clean($value){
 }
 
 function tableExists($conn, $table){
+
     $table = $conn->real_escape_string($table);
-    $res = $conn->query("SHOW TABLES LIKE '$table'");
+
+    $res = $conn->query("
+        SHOW TABLES LIKE '$table'
+    ");
+
     return $res && $res->num_rows > 0;
 }
 
 function columnExists($conn, $table, $column){
-    if (!tableExists($conn, $table)) return false;
-    $table = $conn->real_escape_string($table);
+
+    if (!tableExists($conn, $table)) {
+        return false;
+    }
+
+    $table  = $conn->real_escape_string($table);
     $column = $conn->real_escape_string($column);
-    $res = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$column'");
+
+    $res = $conn->query("
+        SHOW COLUMNS FROM `$table`
+        LIKE '$column'
+    ");
+
     return $res && $res->num_rows > 0;
 }
 
 function countRows($conn, $table, $condition = "1=1"){
-    if (!tableExists($conn, $table)) return 0;
-    $res = $conn->query("SELECT COUNT(*) AS total FROM `$table` WHERE $condition");
-    return $res ? (int)$res->fetch_assoc()['total'] : 0;
+
+    if (!tableExists($conn, $table)) {
+        return 0;
+    }
+
+    $res = $conn->query("
+        SELECT COUNT(*) AS total
+        FROM `$table`
+        WHERE $condition
+    ");
+
+    return $res
+        ? (int)$res->fetch_assoc()['total']
+        : 0;
 }
 
 function sumColumn($conn, $table, $column, $condition = "1=1"){
-    if (!tableExists($conn, $table) || !columnExists($conn, $table, $column)) return 0;
-    $res = $conn->query("SELECT SUM(`$column`) AS total FROM `$table` WHERE $condition");
-    return $res ? (float)($res->fetch_assoc()['total'] ?? 0) : 0;
+
+    if (
+        !tableExists($conn, $table) ||
+        !columnExists($conn, $table, $column)
+    ) {
+        return 0;
+    }
+
+    $res = $conn->query("
+        SELECT SUM(`$column`) AS total
+        FROM `$table`
+        WHERE $condition
+    ");
+
+    return $res
+        ? (float)($res->fetch_assoc()['total'] ?? 0)
+        : 0;
 }
 
 function money($amount){
@@ -44,89 +84,236 @@ function money($amount){
 /* ================= DATE FILTER ================= */
 
 $from = $_GET['from'] ?? date('Y-m-01');
-$to = $_GET['to'] ?? date('Y-m-d');
+$to   = $_GET['to'] ?? date('Y-m-d');
 
 /* ================= METERS ================= */
 
-$totalMeters = countRows($conn, 'meters');
-$activeMeters = countRows($conn, 'meters', "status='Active'");
+$totalMeters    = countRows($conn, 'meters');
+$activeMeters   = countRows($conn, 'meters', "status='Active'");
 $inactiveMeters = countRows($conn, 'meters', "status='Inactive'");
-$smartMeters = columnExists($conn, 'meters', 'meter_type') ? countRows($conn, 'meters', "meter_type LIKE '%Smart%'") : 0;
-$conventionalMeters = columnExists($conn, 'meters', 'meter_type') ? countRows($conn, 'meters', "meter_type LIKE '%Conventional%'") : 0;
+
+$smartMeters = columnExists($conn, 'meters', 'meter_type')
+    ? countRows($conn, 'meters', "meter_type LIKE '%Smart%'")
+    : 0;
+
+$conventionalMeters = columnExists($conn, 'meters', 'meter_type')
+    ? countRows($conn, 'meters', "meter_type LIKE '%Conventional%'")
+    : 0;
 
 /* ================= CUSTOMERS ================= */
 
-$totalCustomers = tableExists($conn, 'customers') ? countRows($conn, 'customers') : countRows($conn, 'customer');
+$totalCustomers = tableExists($conn, 'customers')
+    ? countRows($conn, 'customers')
+    : countRows($conn, 'customer');
+
 $totalApplications = countRows($conn, 'meter_applications');
-$pendingApplications = countRows($conn, 'meter_applications', "status IN ('Pending','Submitted','Under Review')");
-$approvedApplications = countRows($conn, 'meter_applications', "status='Approved'");
-$rejectedApplications = countRows($conn, 'meter_applications', "status='Rejected'");
+
+$pendingApplications = countRows(
+    $conn,
+    'meter_applications',
+    "status IN ('Pending','Submitted','Under Review')"
+);
+
+$approvedApplications = countRows(
+    $conn,
+    'meter_applications',
+    "status='Approved'"
+);
+
+$rejectedApplications = countRows(
+    $conn,
+    'meter_applications',
+    "status='Rejected'"
+);
 
 /* ================= CUSTOMER RELATIONS ================= */
 
 $totalComplaints = countRows($conn, 'customer_complaints');
-$openComplaints = countRows($conn, 'customer_complaints', "status IN ('Submitted','Assigned','In Progress','Escalated')");
-$resolvedComplaints = countRows($conn, 'customer_complaints', "status IN ('Resolved','Closed')");
-$escalatedComplaints = countRows($conn, 'customer_complaints', "status='Escalated'");
+
+$openComplaints = countRows(
+    $conn,
+    'customer_complaints',
+    "status IN ('Submitted','Assigned','In Progress','Escalated')"
+);
+
+$resolvedComplaints = countRows(
+    $conn,
+    'customer_complaints',
+    "status IN ('Resolved','Closed')"
+);
+
+$escalatedComplaints = countRows(
+    $conn,
+    'customer_complaints',
+    "status='Escalated'"
+);
+
 $totalEnquiries = countRows($conn, 'customer_enquiries');
-$openEnquiries = countRows($conn, 'customer_enquiries', "status IN ('Submitted','Open','In Progress')");
+
+$openEnquiries = countRows(
+    $conn,
+    'customer_enquiries',
+    "status IN ('Submitted','Open','In Progress')"
+);
 
 /* ================= ASSETS ================= */
 
-$totalAssets = countRows($conn, 'assets', columnExists($conn, 'assets', 'is_deleted') ? "is_deleted=0" : "1=1");
-$assetValue = sumColumn($conn, 'assets', 'asset_value', columnExists($conn, 'assets', 'is_deleted') ? "is_deleted=0" : "1=1");
-$netAssetValue = sumColumn($conn, 'assets', 'net_value', columnExists($conn, 'assets', 'is_deleted') ? "is_deleted=0" : "1=1");
-$inactiveAssets = countRows($conn, 'assets', "status='Inactive'");
+$totalAssets = countRows(
+    $conn,
+    'assets',
+    columnExists($conn, 'assets', 'is_deleted')
+        ? "is_deleted=0"
+        : "1=1"
+);
+
+$assetValue = sumColumn(
+    $conn,
+    'assets',
+    'asset_value',
+    columnExists($conn, 'assets', 'is_deleted')
+        ? "is_deleted=0"
+        : "1=1"
+);
+
+$netAssetValue = sumColumn(
+    $conn,
+    'assets',
+    'net_value',
+    columnExists($conn, 'assets', 'is_deleted')
+        ? "is_deleted=0"
+        : "1=1"
+);
+
+$inactiveAssets = countRows(
+    $conn,
+    'assets',
+    "status='Inactive'"
+);
 
 /* ================= ZONES ================= */
 
 $totalZones = countRows($conn, 'zones');
-$activeZones = countRows($conn, 'zones', "status='Active'");
-$zonesUnderMaintenance = countRows($conn, 'zones', "status='Under Maintenance'");
-$activeZoneMaintenance = countRows($conn, 'zone_maintenance', "status IN ('Open','In Progress')");
+
+$activeZones = countRows(
+    $conn,
+    'zones',
+    "status='Active'"
+);
+
+$zonesUnderMaintenance = countRows(
+    $conn,
+    'zones',
+    "status='Under Maintenance'"
+);
+
+$activeZoneMaintenance = countRows(
+    $conn,
+    'zone_maintenance',
+    "status IN ('Open','In Progress')"
+);
 
 /* ================= PUMPED VOLUMES ================= */
 
-$pumpedTable = tableExists($conn, 'pumped_volumes') ? 'pumped_volumes' : (tableExists($conn, 'pumped_volume') ? 'pumped_volume' : '');
+$pumpedTable = tableExists($conn, 'pumped_volumes')
+    ? 'pumped_volumes'
+    : (
+        tableExists($conn, 'pumped_volume')
+            ? 'pumped_volume'
+            : ''
+    );
 
-$totalPumped = 0;
+$totalPumped   = 0;
 $monthlyPumped = 0;
 
 if ($pumpedTable) {
-    $volumeCol = columnExists($conn, $pumpedTable, 'volume') ? 'volume' :
-        (columnExists($conn, $pumpedTable, 'pumped_volume') ? 'pumped_volume' :
-        (columnExists($conn, $pumpedTable, 'quantity') ? 'quantity' : ''));
 
-    $dateCol = columnExists($conn, $pumpedTable, 'record_date') ? 'record_date' :
-        (columnExists($conn, $pumpedTable, 'date_recorded') ? 'date_recorded' :
-        (columnExists($conn, $pumpedTable, 'created_at') ? 'created_at' : ''));
+    $volumeCol = columnExists($conn, $pumpedTable, 'volume')
+        ? 'volume'
+        : (
+            columnExists($conn, $pumpedTable, 'pumped_volume')
+                ? 'pumped_volume'
+                : (
+                    columnExists($conn, $pumpedTable, 'quantity')
+                        ? 'quantity'
+                        : ''
+                )
+        );
+
+    $dateCol = columnExists($conn, $pumpedTable, 'record_date')
+        ? 'record_date'
+        : (
+            columnExists($conn, $pumpedTable, 'date_recorded')
+                ? 'date_recorded'
+                : (
+                    columnExists($conn, $pumpedTable, 'created_at')
+                        ? 'created_at'
+                        : ''
+                )
+        );
 
     if ($volumeCol) {
-        $totalPumped = sumColumn($conn, $pumpedTable, $volumeCol);
+
+        $totalPumped = sumColumn(
+            $conn,
+            $pumpedTable,
+            $volumeCol
+        );
+
         if ($dateCol) {
-            $monthlyPumped = sumColumn($conn, $pumpedTable, $volumeCol, "DATE(`$dateCol`) BETWEEN '$from' AND '$to'");
+
+            $monthlyPumped = sumColumn(
+                $conn,
+                $pumpedTable,
+                $volumeCol,
+                "DATE(`$dateCol`) BETWEEN '$from' AND '$to'"
+            );
         }
     }
 }
 
-/* ================= BILLING / REVENUE ================= */
+/* ================= BILLING ================= */
 
-$totalBilled = sumColumn($conn, 'bills', 'amount');
-$paidBills = columnExists($conn, 'bills', 'status') ? sumColumn($conn, 'bills', 'amount', "status='Paid'") : 0;
-$unpaidBills = columnExists($conn, 'bills', 'status') ? sumColumn($conn, 'bills', 'amount', "status!='Paid'") : 0;
+$totalBilled = sumColumn(
+    $conn,
+    'bills',
+    'amount'
+);
+
+$paidBills = columnExists($conn, 'bills', 'status')
+    ? sumColumn($conn, 'bills', 'amount', "status='Paid'")
+    : 0;
+
+$unpaidBills = columnExists($conn, 'bills', 'status')
+    ? sumColumn($conn, 'bills', 'amount', "status!='Paid'")
+    : 0;
 
 /* ================= RATIOS ================= */
 
-$meterActiveRate = $totalMeters > 0 ? round(($activeMeters / $totalMeters) * 100, 1) : 0;
-$complaintResolutionRate = $totalComplaints > 0 ? round(($resolvedComplaints / $totalComplaints) * 100, 1) : 0;
-$applicationApprovalRate = $totalApplications > 0 ? round(($approvedApplications / $totalApplications) * 100, 1) : 0;
-$revenueEfficiency = $totalPumped > 0 ? round($totalBilled / $totalPumped, 2) : 0;
+$meterActiveRate = $totalMeters > 0
+    ? round(($activeMeters / $totalMeters) * 100, 1)
+    : 0;
+
+$complaintResolutionRate = $totalComplaints > 0
+    ? round(($resolvedComplaints / $totalComplaints) * 100, 1)
+    : 0;
+
+$applicationApprovalRate = $totalApplications > 0
+    ? round(($approvedApplications / $totalApplications) * 100, 1)
+    : 0;
+
+$revenueEfficiency = $totalPumped > 0
+    ? round($totalBilled / $totalPumped, 2)
+    : 0;
 
 /* ================= ZONE PERFORMANCE ================= */
 
 $zoneMeterData = [];
 
-if (tableExists($conn, 'meters') && columnExists($conn, 'meters', 'zone')) {
+if (
+    tableExists($conn, 'meters') &&
+    columnExists($conn, 'meters', 'zone')
+) {
+
     $res = $conn->query("
         SELECT zone, COUNT(*) AS total_meters
         FROM meters
@@ -136,17 +323,22 @@ if (tableExists($conn, 'meters') && columnExists($conn, 'meters', 'zone')) {
     ");
 
     if ($res) {
+
         while ($row = $res->fetch_assoc()) {
             $zoneMeterData[] = $row;
         }
     }
 }
 
-/* ================= COMPLAINTS BY ZONE ================= */
+/* ================= COMPLAINT HOTSPOTS ================= */
 
 $complaintsByZone = [];
 
-if (tableExists($conn, 'customer_complaints') && columnExists($conn, 'customer_complaints', 'zone')) {
+if (
+    tableExists($conn, 'customer_complaints') &&
+    columnExists($conn, 'customer_complaints', 'zone')
+) {
+
     $res = $conn->query("
         SELECT zone, COUNT(*) AS total_complaints
         FROM customer_complaints
@@ -156,6 +348,7 @@ if (tableExists($conn, 'customer_complaints') && columnExists($conn, 'customer_c
     ");
 
     if ($res) {
+
         while ($row = $res->fetch_assoc()) {
             $complaintsByZone[] = $row;
         }
@@ -165,11 +358,21 @@ if (tableExists($conn, 'customer_complaints') && columnExists($conn, 'customer_c
 /* ================= RECENT ITEMS ================= */
 
 $recentApplications = tableExists($conn, 'meter_applications')
-    ? $conn->query("SELECT * FROM meter_applications ORDER BY id DESC LIMIT 6")
+    ? $conn->query("
+        SELECT *
+        FROM meter_applications
+        ORDER BY id DESC
+        LIMIT 6
+    ")
     : null;
 
 $recentComplaints = tableExists($conn, 'customer_complaints')
-    ? $conn->query("SELECT * FROM customer_complaints ORDER BY id DESC LIMIT 6")
+    ? $conn->query("
+        SELECT *
+        FROM customer_complaints
+        ORDER BY id DESC
+        LIMIT 6
+    ")
     : null;
 
 /* ================= RISK FLAGS ================= */
@@ -177,73 +380,104 @@ $recentComplaints = tableExists($conn, 'customer_complaints')
 $riskFlags = [];
 
 if ($inactiveMeters > 0) {
-    $riskFlags[] = "$inactiveMeters meters are currently inactive.";
+    $riskFlags[] = "$inactiveMeters inactive meters detected.";
 }
 
 if ($openComplaints > 0) {
-    $riskFlags[] = "$openComplaints customer complaints are still open.";
+    $riskFlags[] = "$openComplaints complaints remain unresolved.";
 }
 
 if ($pendingApplications > 0) {
-    $riskFlags[] = "$pendingApplications meter applications are awaiting action.";
+    $riskFlags[] = "$pendingApplications applications pending approval.";
 }
 
 if ($activeZoneMaintenance > 0) {
-    $riskFlags[] = "$activeZoneMaintenance zone maintenance cases are active.";
+    $riskFlags[] = "$activeZoneMaintenance maintenance operations ongoing.";
 }
 
 if ($unpaidBills > 0) {
-    $riskFlags[] = "Outstanding unpaid bills total " . money($unpaidBills) . ".";
-}
-
-if ($totalPumped > 0 && $totalBilled <= 0) {
-    $riskFlags[] = "Pumped volume exists but billing revenue is missing or not recorded.";
+    $riskFlags[] = "Outstanding unpaid bills total " . money($unpaidBills);
 }
 
 if (empty($riskFlags)) {
-    $riskFlags[] = "No major operational risk detected from available data.";
+    $riskFlags[] = "No major operational risks detected.";
 }
 ?>
 
 <div class="page-content">
 
+    <!-- ================= HEADER ================= -->
+
     <div class="module-header">
+
         <div>
+
             <h2>Managing Director Dashboard</h2>
-            <p>Executive reporting dashboard covering meters, customers, assets, pumped volumes, zones and customer relations.</p>
+
+            <p>
+                Executive reporting dashboard covering
+                metering, production, customer relations,
+                zoning, assets and operational performance.
+            </p>
+
         </div>
 
-        <button onclick="window.print()" class="print-btn">Print Dashboard</button>
     </div>
 
+    <!-- ================= FILTER ================= -->
+
     <form method="GET" class="filter-card">
-        <input type="hidden" name="page" value="<?= clean($_GET['page'] ?? 'advanced_reports/md_dashboard') ?>">
+
+        <input
+            type="hidden"
+            name="page"
+            value="<?= clean($_GET['page'] ?? 'advanced_reports/md_dashboard') ?>"
+        >
 
         <div>
+
             <label>From</label>
-            <input type="date" name="from" value="<?= clean($from) ?>">
+
+            <input
+                type="date"
+                name="from"
+                value="<?= clean($from) ?>"
+            >
+
         </div>
 
         <div>
+
             <label>To</label>
-            <input type="date" name="to" value="<?= clean($to) ?>">
+
+            <input
+                type="date"
+                name="to"
+                value="<?= clean($to) ?>"
+            >
+
         </div>
 
-        <button type="submit">Apply Filter</button>
+        <button type="submit">
+            Apply Filter
+        </button>
+
     </form>
+
+    <!-- ================= KPI GRID ================= -->
 
     <div class="kpi-grid">
 
         <div class="kpi-card">
             <span>Total Meters</span>
             <strong><?= number_format($totalMeters) ?></strong>
-            <small><?= $meterActiveRate ?>% active</small>
+            <small><?= $meterActiveRate ?>% Active</small>
         </div>
 
         <div class="kpi-card">
             <span>Total Customers</span>
             <strong><?= number_format($totalCustomers) ?></strong>
-            <small>Registered customer records</small>
+            <small>Registered customer accounts</small>
         </div>
 
         <div class="kpi-card">
@@ -253,21 +487,21 @@ if (empty($riskFlags)) {
         </div>
 
         <div class="kpi-card">
-            <span>Total Billed</span>
+            <span>Total Revenue</span>
             <strong><?= money($totalBilled) ?></strong>
-            <small>Revenue efficiency: <?= $revenueEfficiency ?></small>
+            <small>Efficiency: <?= $revenueEfficiency ?></small>
         </div>
 
         <div class="kpi-card">
             <span>Total Assets</span>
             <strong><?= number_format($totalAssets) ?></strong>
-            <small>Value: <?= money($assetValue) ?></small>
+            <small>Gross Value: <?= money($assetValue) ?></small>
         </div>
 
         <div class="kpi-card">
             <span>Net Asset Value</span>
             <strong><?= money($netAssetValue) ?></strong>
-            <small><?= $inactiveAssets ?> inactive assets</small>
+            <small><?= number_format($inactiveAssets) ?> inactive assets</small>
         </div>
 
         <div class="kpi-card">
@@ -283,9 +517,9 @@ if (empty($riskFlags)) {
         </div>
 
         <div class="kpi-card">
-            <span>Zones</span>
+            <span>Total Zones</span>
             <strong><?= number_format($totalZones) ?></strong>
-            <small><?= $activeZones ?> active, <?= $zonesUnderMaintenance ?> under maintenance</small>
+            <small><?= $activeZones ?> active zones</small>
         </div>
 
         <div class="kpi-card">
@@ -296,9 +530,47 @@ if (empty($riskFlags)) {
 
     </div>
 
-    <div class="report-grid two">
+    <!-- ================= PERFORMANCE TABS ================= -->
+
+    <div class="performance-tabs">
+
+        <button class="tab-btn active"
+            onclick="openPerformanceTab(event, 'operationalTab')">
+
+            Operational Performance
+
+        </button>
+
+        <button class="tab-btn"
+            onclick="openPerformanceTab(event, 'customerServiceTab')">
+
+            Customer Service Performance
+
+        </button>
+
+        <button class="tab-btn"
+            onclick="openPerformanceTab(event, 'zonePerformanceTab')">
+
+            Top Zones by Meter Count
+
+        </button>
+
+        <button class="tab-btn"
+            onclick="openPerformanceTab(event, 'complaintHotspotTab')">
+
+            Complaint Hotspots
+
+        </button>
+
+    </div>
+
+    <!-- ================= OPERATIONAL PERFORMANCE ================= -->
+
+    <div id="operationalTab"
+        class="performance-content active-tab">
 
         <div class="report-card">
+
             <h3>Operational Performance</h3>
 
             <div class="metric-row">
@@ -325,9 +597,18 @@ if (empty($riskFlags)) {
                 <span>Active Zone Maintenance</span>
                 <strong><?= number_format($activeZoneMaintenance) ?></strong>
             </div>
+
         </div>
 
+    </div>
+
+    <!-- ================= CUSTOMER SERVICE ================= -->
+
+    <div id="customerServiceTab"
+        class="performance-content">
+
         <div class="report-card">
+
             <h3>Customer Service Performance</h3>
 
             <div class="metric-row">
@@ -354,281 +635,584 @@ if (empty($riskFlags)) {
                 <span>Rejected Applications</span>
                 <strong><?= number_format($rejectedApplications) ?></strong>
             </div>
+
         </div>
 
     </div>
 
-    <div class="report-grid two">
+    <!-- ================= ZONE PERFORMANCE ================= -->
+
+    <div id="zonePerformanceTab"
+        class="performance-content">
 
         <div class="report-card">
+
             <h3>Top Zones by Meter Count</h3>
 
             <?php if (!empty($zoneMeterData)): ?>
+
                 <?php foreach ($zoneMeterData as $z): ?>
+
                     <div class="metric-row">
+
                         <span><?= clean($z['zone']) ?></span>
-                        <strong><?= number_format($z['total_meters']) ?></strong>
+
+                        <strong>
+                            <?= number_format($z['total_meters']) ?>
+                        </strong>
+
                     </div>
+
                 <?php endforeach; ?>
+
             <?php else: ?>
-                <p class="empty">No zone meter data available.</p>
+
+                <p class="empty">
+                    No zone performance data available.
+                </p>
+
             <?php endif; ?>
+
         </div>
 
+    </div>
+
+    <!-- ================= COMPLAINT HOTSPOTS ================= -->
+
+    <div id="complaintHotspotTab"
+        class="performance-content">
+
         <div class="report-card">
+
             <h3>Complaint Hotspots</h3>
 
             <?php if (!empty($complaintsByZone)): ?>
+
                 <?php foreach ($complaintsByZone as $c): ?>
+
                     <div class="metric-row">
+
                         <span><?= clean($c['zone']) ?></span>
-                        <strong><?= number_format($c['total_complaints']) ?></strong>
+
+                        <strong>
+                            <?= number_format($c['total_complaints']) ?>
+                        </strong>
+
                     </div>
+
                 <?php endforeach; ?>
+
             <?php else: ?>
-                <p class="empty">No complaint zone data available.</p>
+
+                <p class="empty">
+                    No complaint hotspot data available.
+                </p>
+
             <?php endif; ?>
+
         </div>
 
     </div>
 
+    <!-- ================= RISK FLAGS ================= -->
+
     <div class="report-card">
+
         <h3>Executive Risk Flags</h3>
 
         <div class="risk-list">
+
             <?php foreach ($riskFlags as $risk): ?>
-                <div class="risk-item"><?= clean($risk) ?></div>
+
+                <div class="risk-item">
+
+                    <?= clean($risk) ?>
+
+                </div>
+
             <?php endforeach; ?>
+
         </div>
+
     </div>
+
+    <!-- ================= TABLES ================= -->
 
     <div class="report-grid two">
 
+        <!-- APPLICATIONS -->
+
         <div class="report-card">
+
             <h3>Recent Meter Applications</h3>
 
             <table>
+
                 <thead>
+
                     <tr>
                         <th>Reference</th>
                         <th>Customer</th>
                         <th>Zone</th>
                         <th>Status</th>
                     </tr>
+
                 </thead>
+
                 <tbody>
-                    <?php if ($recentApplications && $recentApplications->num_rows > 0): ?>
-                        <?php while ($a = $recentApplications->fetch_assoc()): ?>
-                            <tr>
-                                <td><?= clean($a['application_ref'] ?? '') ?></td>
-                                <td><?= clean($a['customer_name'] ?? '') ?></td>
-                                <td><?= clean($a['zone'] ?? '') ?></td>
-                                <td><span class="status-badge"><?= clean($a['status'] ?? '') ?></span></td>
-                            </tr>
-                        <?php endwhile; ?>
-                    <?php else: ?>
-                        <tr><td colspan="4">No recent applications found.</td></tr>
-                    <?php endif; ?>
+
+                <?php if (
+                    $recentApplications &&
+                    $recentApplications->num_rows > 0
+                ): ?>
+
+                    <?php while ($a = $recentApplications->fetch_assoc()): ?>
+
+                        <tr>
+
+                            <td>
+                                <?= clean($a['application_ref'] ?? '') ?>
+                            </td>
+
+                            <td>
+                                <?= clean($a['customer_name'] ?? '') ?>
+                            </td>
+
+                            <td>
+                                <?= clean($a['zone'] ?? '') ?>
+                            </td>
+
+                            <td>
+
+                                <span class="status-badge">
+
+                                    <?= clean($a['status'] ?? '') ?>
+
+                                </span>
+
+                            </td>
+
+                        </tr>
+
+                    <?php endwhile; ?>
+
+                <?php else: ?>
+
+                    <tr>
+
+                        <td colspan="4">
+                            No recent applications found.
+                        </td>
+
+                    </tr>
+
+                <?php endif; ?>
+
                 </tbody>
+
             </table>
+
         </div>
 
+        <!-- COMPLAINTS -->
+
         <div class="report-card">
+
             <h3>Recent Complaints</h3>
 
             <table>
+
                 <thead>
+
                     <tr>
                         <th>Reference</th>
                         <th>Customer</th>
                         <th>Issue</th>
                         <th>Status</th>
                     </tr>
+
                 </thead>
+
                 <tbody>
-                    <?php if ($recentComplaints && $recentComplaints->num_rows > 0): ?>
-                        <?php while ($c = $recentComplaints->fetch_assoc()): ?>
-                            <tr>
-                                <td><?= clean($c['complaint_ref'] ?? '') ?></td>
-                                <td><?= clean($c['customer_name'] ?? '') ?></td>
-                                <td><?= clean($c['complaint_type'] ?? '') ?></td>
-                                <td><span class="status-badge"><?= clean($c['status'] ?? '') ?></span></td>
-                            </tr>
-                        <?php endwhile; ?>
-                    <?php else: ?>
-                        <tr><td colspan="4">No recent complaints found.</td></tr>
-                    <?php endif; ?>
+
+                <?php if (
+                    $recentComplaints &&
+                    $recentComplaints->num_rows > 0
+                ): ?>
+
+                    <?php while ($c = $recentComplaints->fetch_assoc()): ?>
+
+                        <tr>
+
+                            <td>
+                                <?= clean($c['complaint_ref'] ?? '') ?>
+                            </td>
+
+                            <td>
+                                <?= clean($c['customer_name'] ?? '') ?>
+                            </td>
+
+                            <td>
+                                <?= clean($c['complaint_type'] ?? '') ?>
+                            </td>
+
+                            <td>
+
+                                <span class="status-badge">
+
+                                    <?= clean($c['status'] ?? '') ?>
+
+                                </span>
+
+                            </td>
+
+                        </tr>
+
+                    <?php endwhile; ?>
+
+                <?php else: ?>
+
+                    <tr>
+
+                        <td colspan="4">
+                            No recent complaints found.
+                        </td>
+
+                    </tr>
+
+                <?php endif; ?>
+
                 </tbody>
+
             </table>
+
         </div>
 
     </div>
 
 </div>
 
+<!-- ================= SCRIPT ================= -->
+
+<script>
+
+function openPerformanceTab(evt, tabId){
+
+    let i;
+
+    let tabcontent =
+        document.getElementsByClassName("performance-content");
+
+    for(i = 0; i < tabcontent.length; i++){
+
+        tabcontent[i].classList.remove("active-tab");
+    }
+
+    let tabbuttons =
+        document.getElementsByClassName("tab-btn");
+
+    for(i = 0; i < tabbuttons.length; i++){
+
+        tabbuttons[i].classList.remove("active");
+    }
+
+    document
+        .getElementById(tabId)
+        .classList.add("active-tab");
+
+    evt.currentTarget.classList.add("active");
+}
+
+</script>
+
 <style>
+
+/* =========================================
+   THEME
+========================================= */
+
+:root{
+    --primary:#0a2a43;
+    --primary-soft:#eef4f8;
+    --primary-light:#f4f7fb;
+    --border:#dbe3ee;
+    --text:#334155;
+}
+
+/* =========================================
+   PAGE
+========================================= */
+
 .page-content{
     margin-left:260px;
     margin-top:75px;
     margin-bottom:60px;
-    padding:20px;
+    padding:22px;
     background:#f4f7fb;
     min-height:calc(100vh - 135px);
-    font-family:Arial, sans-serif;
+    font-family:'Segoe UI',Tahoma,sans-serif;
 }
 
-.module-header,
-.filter-card,
-.kpi-card,
-.report-card{
-    background:#fff;
-    border:1px solid #e5e7eb;
-    border-radius:10px;
-    box-shadow:0 2px 6px rgba(0,0,0,0.04);
-}
+/* =========================================
+   HEADER
+========================================= */
 
 .module-header{
-    padding:18px 20px;
-    margin-bottom:18px;
-    border-left:4px solid #0a2a43;
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    gap:15px;
+    background:#ffffff;
+    border-radius:18px;
+    padding:26px;
+    margin-bottom:22px;
+
+    /* LEFT OVERLAY */
+    border-left:6px solid var(--primary);
+
+    /* LIGHT BORDER */
+    border-top:1px solid var(--border);
+    border-right:1px solid var(--border);
+    border-bottom:1px solid var(--border);
+
+    box-shadow:0 8px 20px rgba(0,0,0,0.05);
 }
 
 .module-header h2{
     margin:0;
-    color:#0a2a43;
-    font-size:20px;
+    font-size:26px;
+    font-weight:700;
+    color:var(--primary);
 }
 
 .module-header p{
-    margin:6px 0 0;
+    margin:8px 0 0;
     color:#64748b;
     font-size:14px;
+    line-height:1.6;
 }
 
-.print-btn,
-.filter-card button{
-    background:#0a2a43;
-    color:#fff;
-    border:none;
-    padding:9px 14px;
-    border-radius:6px;
-    cursor:pointer;
-    font-size:13px;
-}
+/* =========================================
+   FILTER
+========================================= */
 
 .filter-card{
-    padding:14px;
-    margin-bottom:18px;
+    background:#fff;
+    border-radius:16px;
+    padding:18px 20px;
+    margin-bottom:22px;
     display:flex;
-    align-items:end;
-    gap:12px;
     flex-wrap:wrap;
+    align-items:end;
+    gap:16px;
+    border:1px solid var(--border);
+    box-shadow:0 4px 16px rgba(15,23,42,0.05);
 }
 
 .filter-card label{
     display:block;
+    margin-bottom:6px;
     font-size:13px;
     font-weight:600;
-    color:#334155;
-    margin-bottom:5px;
+    color:#475569;
 }
 
 .filter-card input{
-    padding:9px;
-    border:1px solid #d1d5db;
-    border-radius:6px;
+    min-width:180px;
+    padding:11px 12px;
+    border-radius:10px;
+    border:1px solid var(--border);
+    background:#f8fafc;
 }
+
+.filter-card input:focus{
+    outline:none;
+    border-color:var(--primary);
+    background:#fff;
+}
+
+.filter-card button{
+    border:none;
+    background:var(--primary);
+    color:#fff;
+    padding:11px 18px;
+    border-radius:10px;
+    cursor:pointer;
+    font-weight:600;
+}
+
+/* =========================================
+   KPI GRID
+========================================= */
 
 .kpi-grid{
     display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
-    gap:12px;
-    margin-bottom:18px;
+    grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+    gap:18px;
+    margin-bottom:24px;
 }
 
 .kpi-card{
-    padding:16px;
+    position:relative;
+    overflow:hidden;
+    background:#fff;
+    border-radius:18px;
+    padding:22px;
+    border:1px solid var(--border);
+    box-shadow:0 6px 18px rgba(15,23,42,0.05);
+}
+
+.kpi-card::before{
+    content:'';
+    position:absolute;
+    top:0;
+    left:0;
+    width:100%;
+    height:5px;
+    background:var(--primary);
 }
 
 .kpi-card span{
     display:block;
-    font-size:13px;
     color:#64748b;
-    margin-bottom:8px;
+    font-size:13px;
+    font-weight:600;
+    margin-bottom:10px;
+    text-transform:uppercase;
 }
 
 .kpi-card strong{
     display:block;
-    color:#0a2a43;
-    font-size:22px;
-    margin-bottom:5px;
+    font-size:28px;
+    color:var(--primary);
+    margin-bottom:8px;
+    font-weight:700;
 }
 
 .kpi-card small{
-    color:#64748b;
+    color:#475569;
+    font-size:13px;
 }
 
-.report-grid{
-    display:grid;
-    gap:18px;
-    margin-bottom:18px;
-}
-
-.report-grid.two{
-    grid-template-columns:repeat(auto-fit,minmax(330px,1fr));
-}
+/* =========================================
+   REPORT CARD
+========================================= */
 
 .report-card{
-    padding:18px;
-    margin-bottom:18px;
+    background:#fff;
+    border-radius:18px;
+    padding:22px;
+    border:1px solid var(--border);
+    box-shadow:0 6px 18px rgba(15,23,42,0.05);
     overflow-x:auto;
+    margin-bottom:22px;
 }
 
 .report-card h3{
-    margin:0 0 14px;
-    color:#0a2a43;
-    font-size:17px;
+    margin:0 0 18px;
+    font-size:18px;
+    color:var(--primary);
+    font-weight:700;
 }
+
+/* =========================================
+   PERFORMANCE TABS
+========================================= */
+
+.performance-tabs{
+    display:flex;
+    flex-wrap:wrap;
+    gap:12px;
+    margin-bottom:20px;
+}
+
+.tab-btn{
+    border:none;
+    background:#ffffff;
+    color:var(--primary);
+    padding:12px 18px;
+    border-radius:12px;
+    font-size:14px;
+    font-weight:600;
+    cursor:pointer;
+    border:1px solid var(--border);
+    transition:0.25s ease;
+}
+
+.tab-btn:hover{
+    background:var(--primary-soft);
+}
+
+.tab-btn.active{
+    background:var(--primary);
+    color:#ffffff;
+    border-color:var(--primary);
+}
+
+/* =========================================
+   TAB CONTENT
+========================================= */
+
+.performance-content{
+    display:none;
+    animation:fadeEffect 0.3s ease;
+}
+
+.performance-content.active-tab{
+    display:block;
+}
+
+/* =========================================
+   METRIC ROWS
+========================================= */
 
 .metric-row{
     display:flex;
     justify-content:space-between;
-    gap:12px;
-    border-bottom:1px solid #e5e7eb;
-    padding:10px 0;
-    font-size:14px;
+    align-items:center;
+    padding:14px 0;
+    border-bottom:1px solid #edf2f7;
+}
+
+.metric-row:last-child{
+    border-bottom:none;
 }
 
 .metric-row span{
     color:#475569;
+    font-size:14px;
 }
 
 .metric-row strong{
-    color:#0a2a43;
+    color:var(--primary);
+    font-size:15px;
+    font-weight:700;
 }
+
+/* =========================================
+   RISK FLAGS
+========================================= */
 
 .risk-list{
     display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
-    gap:10px;
+    grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+    gap:14px;
 }
 
 .risk-item{
-    background:#f8fafc;
-    border-left:4px solid #0a2a43;
-    border-radius:8px;
-    padding:12px;
-    color:#334155;
+    background:#fff;
+    border-left:5px solid var(--primary);
+    padding:16px;
+    border-radius:12px;
     font-size:14px;
+    color:#475569;
+    box-shadow:0 4px 10px rgba(0,0,0,0.04);
 }
 
-.empty{
-    color:#64748b;
-    font-size:14px;
+/* =========================================
+   TABLES
+========================================= */
+
+.report-grid.two{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(360px,1fr));
+    gap:20px;
 }
 
 table{
@@ -637,46 +1221,100 @@ table{
     font-size:14px;
 }
 
-th{
+thead{
     background:#f8fafc;
-    color:#334155;
+}
+
+th{
+    padding:13px 12px;
     text-align:left;
-    padding:10px;
-    border-bottom:1px solid #e5e7eb;
+    color:#334155;
+    font-size:13px;
+    font-weight:700;
+    border-bottom:1px solid var(--border);
 }
 
 td{
-    padding:10px;
-    border-bottom:1px solid #e5e7eb;
-    color:#334155;
+    padding:13px 12px;
+    border-bottom:1px solid #edf2f7;
+    color:#475569;
 }
+
+tbody tr:hover{
+    background:#f8fafc;
+}
+
+/* =========================================
+   STATUS BADGES
+========================================= */
 
 .status-badge{
-    display:inline-block;
-    padding:4px 8px;
-    border-radius:20px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    padding:6px 12px;
+    border-radius:30px;
     font-size:12px;
-    background:#f1f5f9;
-    color:#334155;
-    border:1px solid #cbd5e1;
+    font-weight:700;
+    background:var(--primary-soft);
+    color:var(--primary);
 }
 
-@media print{
+/* =========================================
+   EMPTY
+========================================= */
+
+.empty{
+    color:#94a3b8;
+    font-size:14px;
+    padding:14px 0;
+}
+
+/* =========================================
+   ANIMATION
+========================================= */
+
+@keyframes fadeEffect{
+
+    from{
+        opacity:0;
+        transform:translateY(6px);
+    }
+
+    to{
+        opacity:1;
+        transform:translateY(0);
+    }
+}
+
+/* =========================================
+   RESPONSIVE
+========================================= */
+
+@media(max-width:992px){
+
     .page-content{
-        margin:0;
-        padding:10px;
-        background:white;
+        margin-left:0;
+        padding:15px;
     }
 
-    .print-btn,
     .filter-card{
-        display:none;
+        flex-direction:column;
+        align-items:stretch;
     }
 
-    .module-header,
-    .kpi-card,
-    .report-card{
-        box-shadow:none;
+    .filter-card input{
+        width:100%;
+    }
+
+    .kpi-grid{
+        grid-template-columns:repeat(auto-fit,minmax(100%,1fr));
+    }
+
+    .performance-tabs{
+        flex-direction:column;
     }
 }
+
 </style>
+```

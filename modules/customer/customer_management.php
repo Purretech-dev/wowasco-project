@@ -8,7 +8,7 @@ if (!isset($conn) || $conn->connect_error) {
 /* ================= HELPERS ================= */
 
 function clean($value) {
-    return htmlspecialchars(trim($value ?? ''), ENT_QUOTES, 'UTF-8');
+    return htmlspecialchars(trim((string)($value ?? '')), ENT_QUOTES, 'UTF-8');
 }
 
 function tableExists($conn, $table) {
@@ -18,6 +18,7 @@ function tableExists($conn, $table) {
 }
 
 function columnExists($conn, $table, $column) {
+    if (!tableExists($conn, $table)) return false;
     $table = $conn->real_escape_string($table);
     $column = $conn->real_escape_string($column);
     $res = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$column'");
@@ -30,7 +31,25 @@ function addColumnIfMissing($conn, $table, $column, $definition) {
     }
 }
 
-/* ================= ADD ENTERPRISE COLUMNS IF MISSING ================= */
+function countRows($conn, $table, $condition = "1=1") {
+    if (!tableExists($conn, $table)) return 0;
+    $res = $conn->query("SELECT COUNT(*) AS c FROM `$table` WHERE $condition");
+    return $res ? (int)$res->fetch_assoc()['c'] : 0;
+}
+
+function logAction($conn, $caseType, $caseId, $action, $oldStatus, $newStatus, $staff, $notes) {
+    if (!tableExists($conn, 'customer_case_updates')) return;
+
+    $stmt = $conn->prepare("
+        INSERT INTO customer_case_updates
+        (case_type, case_id, action_taken, old_status, new_status, staff_name, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ");
+    $stmt->bind_param("sisssss", $caseType, $caseId, $action, $oldStatus, $newStatus, $staff, $notes);
+    $stmt->execute();
+}
+
+/* ================= ADD COLUMNS IF MISSING ================= */
 
 addColumnIfMissing($conn, 'meter_applications', 'assigned_staff', "VARCHAR(100) NULL");
 addColumnIfMissing($conn, 'meter_applications', 'response', "TEXT NULL");
@@ -41,24 +60,15 @@ addColumnIfMissing($conn, 'meter_applications', 'reviewed_at', "DATETIME NULL");
 addColumnIfMissing($conn, 'meter_applications', 'updated_at', "TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
 
 addColumnIfMissing($conn, 'customer_enquiries', 'assigned_staff', "VARCHAR(100) NULL");
+addColumnIfMissing($conn, 'customer_enquiries', 'response', "TEXT NULL");
 addColumnIfMissing($conn, 'customer_enquiries', 'updated_at', "TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
 
+addColumnIfMissing($conn, 'customer_complaints', 'assigned_staff', "VARCHAR(100) NULL");
+addColumnIfMissing($conn, 'customer_complaints', 'response', "TEXT NULL");
 addColumnIfMissing($conn, 'customer_complaints', 'due_date', "DATE NULL");
 addColumnIfMissing($conn, 'customer_complaints', 'resolution_notes', "TEXT NULL");
 addColumnIfMissing($conn, 'customer_complaints', 'escalation_reason', "TEXT NULL");
 addColumnIfMissing($conn, 'customer_complaints', 'updated_at', "TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
-
-/* ================= LOG ACTION ================= */
-
-function logAction($conn, $caseType, $caseId, $action, $oldStatus, $newStatus, $staff, $notes) {
-    $stmt = $conn->prepare("
-        INSERT INTO customer_case_updates
-        (case_type, case_id, action_taken, old_status, new_status, staff_name, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ");
-    $stmt->bind_param("sisssss", $caseType, $caseId, $action, $oldStatus, $newStatus, $staff, $notes);
-    $stmt->execute();
-}
 
 /* ================= ACTION HANDLING ================= */
 
@@ -68,8 +78,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['crm_action'])) {
 
     $action = $_POST['crm_action'];
     $staff = trim($_POST['staff_name'] ?? 'Back Office');
-
-    /* ===== METER APPLICATION ACTIONS ===== */
 
     if ($action === 'update_application') {
         $id = (int) $_POST['application_id'];
@@ -91,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['crm_action'])) {
 
         if ($stmt->execute()) {
             logAction($conn, 'Meter Application', $id, 'Application Updated', $oldStatus, $status, $staff, $response);
-            $message = "<div class='alert success'>Meter application updated successfully.</div>";
+            $message = "<div class='alert green'><strong>Success.</strong><br>Meter application updated successfully.</div>";
         }
     }
 
@@ -111,11 +119,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['crm_action'])) {
 
         if ($stmt->execute()) {
             logAction($conn, 'Meter Application', $id, 'Application Rejected', $oldStatus, 'Rejected', $staff, $reason);
-            $message = "<div class='alert success'>Application rejected successfully.</div>";
+            $message = "<div class='alert red'><strong>Application Rejected.</strong><br>The application has been rejected successfully.</div>";
         }
     }
-
-    /* ===== ENQUIRY ACTIONS ===== */
 
     if ($action === 'respond_enquiry') {
         $id = (int) $_POST['enquiry_id'];
@@ -135,11 +141,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['crm_action'])) {
 
         if ($stmt->execute()) {
             logAction($conn, 'Enquiry', $id, 'Enquiry Responded', $oldStatus, $status, $staff, $response);
-            $message = "<div class='alert success'>Enquiry updated successfully.</div>";
+            $message = "<div class='alert green'><strong>Success.</strong><br>Enquiry updated successfully.</div>";
         }
     }
-
-    /* ===== COMPLAINT ACTIONS ===== */
 
     if ($action === 'update_complaint') {
         $id = (int) $_POST['complaint_id'];
@@ -163,11 +167,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['crm_action'])) {
 
         if ($stmt->execute()) {
             logAction($conn, 'Complaint', $id, 'Complaint Updated', $oldStatus, $status, $staff, $response);
-            $message = "<div class='alert success'>Complaint updated successfully.</div>";
+            $message = "<div class='alert green'><strong>Success.</strong><br>Complaint updated successfully.</div>";
         }
     }
-
-    /* ===== WATER RATIONING ACTIONS ===== */
 
     if ($action === 'save_rationing') {
         $zone = trim($_POST['zone']);
@@ -185,7 +187,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['crm_action'])) {
         $stmt->bind_param("ssssss", $zone, $day, $start, $end, $notice, $status);
 
         if ($stmt->execute()) {
-            $message = "<div class='alert success'>Water rationing notice published successfully.</div>";
+            $message = "<div class='alert green'><strong>Published.</strong><br>Water rationing notice published successfully.</div>";
         }
     }
 
@@ -197,7 +199,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['crm_action'])) {
         $stmt->bind_param("si", $status, $id);
 
         if ($stmt->execute()) {
-            $message = "<div class='alert success'>Water rationing status updated successfully.</div>";
+            $message = "<div class='alert green'><strong>Updated.</strong><br>Water rationing status updated successfully.</div>";
         }
     }
 }
@@ -206,7 +208,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['crm_action'])) {
 
 $search = trim($_GET['search'] ?? '');
 $statusFilter = trim($_GET['status'] ?? '');
-$typeFilter = trim($_GET['type'] ?? '');
 
 function buildWhere($conn, $search, $statusFilter, $fields) {
     $where = " WHERE 1=1 ";
@@ -230,11 +231,6 @@ function buildWhere($conn, $search, $statusFilter, $fields) {
 
 /* ================= COUNTS ================= */
 
-function countRows($conn, $table, $condition = "1=1") {
-    $res = $conn->query("SELECT COUNT(*) AS c FROM $table WHERE $condition");
-    return $res ? (int)$res->fetch_assoc()['c'] : 0;
-}
-
 $totalApps = countRows($conn, 'meter_applications');
 $pendingApps = countRows($conn, 'meter_applications', "status IN ('Pending','Submitted','Under Review')");
 $approvedApps = countRows($conn, 'meter_applications', "status='Approved'");
@@ -248,6 +244,13 @@ $totalComplaints = countRows($conn, 'customer_complaints');
 $openComplaints = countRows($conn, 'customer_complaints', "status IN ('Submitted','Assigned','In Progress','Escalated')");
 $resolvedComplaints = countRows($conn, 'customer_complaints', "status IN ('Resolved','Closed')");
 $escalatedComplaints = countRows($conn, 'customer_complaints', "status='Escalated'");
+
+$activeRationing = countRows($conn, 'water_rationing_schedule', "status='Active'");
+
+$totalCases = $totalApps + $totalEnquiries + $totalComplaints;
+$openCases = $pendingApps + $openEnquiries + $openComplaints;
+$resolvedCases = $approvedApps + $closedEnquiries + $resolvedComplaints;
+$riskRate = $totalCases > 0 ? round((($openComplaints + $escalatedComplaints) / $totalCases) * 100) : 0;
 
 /* ================= DATA ================= */
 
@@ -263,396 +266,530 @@ $complaintWhere = buildWhere($conn, $search, $statusFilter, [
     'complaint_ref', 'customer_name', 'contact', 'meter_serial', 'zone', 'complaint_type', 'priority'
 ]);
 
-$applications = $conn->query("SELECT * FROM meter_applications $appWhere ORDER BY id DESC");
-$enquiries = $conn->query("SELECT * FROM customer_enquiries $enquiryWhere ORDER BY id DESC");
-$complaints = $conn->query("SELECT * FROM customer_complaints $complaintWhere ORDER BY id DESC");
-$rationing = $conn->query("SELECT * FROM water_rationing_schedule ORDER BY id DESC");
-$updates = $conn->query("SELECT * FROM customer_case_updates ORDER BY id DESC LIMIT 30");
+$applications = tableExists($conn, 'meter_applications') ? $conn->query("SELECT * FROM meter_applications $appWhere ORDER BY id DESC") : false;
+$enquiries = tableExists($conn, 'customer_enquiries') ? $conn->query("SELECT * FROM customer_enquiries $enquiryWhere ORDER BY id DESC") : false;
+$complaints = tableExists($conn, 'customer_complaints') ? $conn->query("SELECT * FROM customer_complaints $complaintWhere ORDER BY id DESC") : false;
+$rationing = tableExists($conn, 'water_rationing_schedule') ? $conn->query("SELECT * FROM water_rationing_schedule ORDER BY id DESC") : false;
+$updates = tableExists($conn, 'customer_case_updates') ? $conn->query("SELECT * FROM customer_case_updates ORDER BY id DESC LIMIT 30") : false;
 ?>
 
-<div class="page-content">
+<div class="container">
 
-    <div class="module-header">
-        <h2>Customer Management</h2>
-        <p>Back office management for meter applications, enquiries, complaints, assignments, responses and customer notices.</p>
+    <div class="page-header">
+        <div>
+            <h2>Customer Management Center</h2>
+            <p>Back-office customer service, applications, enquiries, complaints, assignments, notices and audit intelligence.</p>
+        </div>
+
+        <div class="header-badge">
+            Case Exposure: <?= $riskRate ?>%
+        </div>
     </div>
 
     <?= $message ?>
 
-    <div class="summary-grid">
-        <div class="summary-card">
-            <span>Total Applications</span>
-            <strong><?= $totalApps ?></strong>
+    <div class="kpis">
+
+        <div class="kpi blue">
+            <h3><?= number_format($totalCases) ?></h3>
+            <p>Total Customer Cases</p>
+            <small>Applications, enquiries and complaints</small>
         </div>
-        <div class="summary-card">
-            <span>Pending Applications</span>
-            <strong><?= $pendingApps ?></strong>
+
+        <div class="kpi yellow">
+            <h3><?= number_format($openCases) ?></h3>
+            <p>Open / Pending Cases</p>
+            <small>Requires back-office follow-up</small>
         </div>
-        <div class="summary-card">
-            <span>Approved Applications</span>
-            <strong><?= $approvedApps ?></strong>
+
+        <div class="kpi red">
+            <h3><?= number_format($escalatedComplaints) ?></h3>
+            <p>Escalated Complaints</p>
+            <small>Immediate attention recommended</small>
         </div>
-        <div class="summary-card">
-            <span>Rejected Applications</span>
-            <strong><?= $rejectedApps ?></strong>
+
+        <div class="kpi">
+            <h3><?= number_format($resolvedCases) ?></h3>
+            <p>Resolved / Approved</p>
+            <small>Completed customer actions</small>
         </div>
-        <div class="summary-card">
-            <span>Total Enquiries</span>
-            <strong><?= $totalEnquiries ?></strong>
-        </div>
-        <div class="summary-card">
-            <span>Open Enquiries</span>
-            <strong><?= $openEnquiries ?></strong>
-        </div>
-        <div class="summary-card">
-            <span>Total Complaints</span>
-            <strong><?= $totalComplaints ?></strong>
-        </div>
-        <div class="summary-card">
-            <span>Escalated Complaints</span>
-            <strong><?= $escalatedComplaints ?></strong>
-        </div>
+
     </div>
 
-    <div class="filter-card">
-        <form method="GET">
-            <input type="hidden" name="page" value="<?= clean($_GET['page'] ?? 'customer_relations/customer_management') ?>">
+    <form class="filters" method="GET" action="dashboard.php">
 
-            <input type="text" name="search" placeholder="Search customer, ref, contact, ID, meter..." value="<?= clean($search) ?>">
+        <input type="hidden" name="page" value="<?= clean($_GET['page'] ?? 'customer_relations/customer_management') ?>">
 
-            <select name="status">
-                <option value="">All Statuses</option>
-                <?php
-                $statuses = ['Pending','Submitted','Under Review','More Information Required','Approved','Rejected','Assigned','In Progress','Escalated','Resolved','Closed','Completed'];
-                foreach ($statuses as $s):
-                ?>
-                    <option value="<?= $s ?>" <?= $statusFilter === $s ? 'selected' : '' ?>><?= $s ?></option>
-                <?php endforeach; ?>
-            </select>
+        <input type="text" name="search" placeholder="Search customer, reference, contact, ID or meter..." value="<?= clean($search) ?>">
 
-            <button type="submit">Filter</button>
-            <a href="dashboard.php?page=customer_relations/customer_management" class="clear-btn">Reset</a>
-        </form>
+        <select name="status">
+            <option value="">All Statuses</option>
+            <?php
+            $statuses = ['Pending','Submitted','Under Review','More Information Required','Approved','Rejected','Assigned','In Progress','Escalated','Resolved','Closed','Completed'];
+            foreach ($statuses as $s):
+            ?>
+                <option value="<?= clean($s) ?>" <?= $statusFilter === $s ? 'selected' : '' ?>>
+                    <?= clean($s) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+
+        <button type="submit">Filter</button>
+
+        <a href="dashboard.php?page=customer_relations/customer_management" class="btn btn-light">
+            Reset
+        </a>
+
+    </form>
+
+    <div class="filters crm-tabs">
+
+        <button type="button" class="tab-btn active" onclick="openCrmTab(event,'applications')">
+            Meter Applications
+        </button>
+
+        <button type="button" class="tab-btn" onclick="openCrmTab(event,'enquiries')">
+            Enquiries
+        </button>
+
+        <button type="button" class="tab-btn" onclick="openCrmTab(event,'complaints')">
+            Complaints
+        </button>
+
+        <button type="button" class="tab-btn" onclick="openCrmTab(event,'rationing')">
+            Water Rationing
+        </button>
+
+        <button type="button" class="tab-btn" onclick="openCrmTab(event,'audit')">
+            Audit Trail
+        </button>
+
     </div>
 
-    <div class="crm-tabs">
-        <button class="tab-btn active" onclick="openCrmTab(event,'applications')">Meter Applications</button>
-        <button class="tab-btn" onclick="openCrmTab(event,'enquiries')">Enquiries</button>
-        <button class="tab-btn" onclick="openCrmTab(event,'complaints')">Complaints</button>
-        <button class="tab-btn" onclick="openCrmTab(event,'rationing')">Water Rationing</button>
-        <button class="tab-btn" onclick="openCrmTab(event,'audit')">Audit Trail</button>
-    </div>
+    <div class="grid">
 
-    <!-- ================= METER APPLICATIONS ================= -->
+        <div class="panel">
 
-    <div id="applications" class="tab-section active">
-        <div class="section-header">
-            <h3>Meter Application Approvals</h3>
-            <p>Review, approve, reject, assign staff and update application status.</p>
-        </div>
+            <!-- APPLICATIONS -->
 
-        <div class="table-card">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Application</th>
-                        <th>Customer</th>
-                        <th>Meter</th>
-                        <th>Status</th>
-                        <th>Assigned Staff</th>
-                        <th>ID Copy</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                <?php if ($applications && $applications->num_rows > 0): ?>
-                    <?php while ($a = $applications->fetch_assoc()): ?>
-                        <tr>
-                            <td>
-                                <strong><?= clean($a['application_ref']) ?></strong><br>
-                                <small><?= clean($a['created_at']) ?></small>
-                            </td>
-                            <td>
-                                <?= clean($a['customer_name']) ?><br>
-                                <small>ID: <?= clean($a['id_number']) ?> | <?= clean($a['contact']) ?></small><br>
-                                <small>Zone: <?= clean($a['zone']) ?></small>
-                            </td>
-                            <td>
-                                <?= clean($a['meter_type']) ?><br>
-                                <small><?= clean($a['customer_type']) ?></small><br>
-                                <small>Serial: <?= clean($a['meter_serial'] ?? '') ?></small>
-                            </td>
-                            <td><span class="status-badge"><?= clean($a['status']) ?></span></td>
-                            <td><?= clean($a['assigned_staff'] ?? 'Unassigned') ?></td>
-                            <td>
-                                <?php if (!empty($a['national_id_copy'])): ?>
-                                    <a class="link-btn" href="<?= clean('../../' . $a['national_id_copy']) ?>" target="_blank">View</a>
-                                <?php else: ?>
-                                    <small>No file</small>
-                                <?php endif; ?>
-                            </td>
-                            <td>
-                                <button class="small-btn" onclick='openApplicationModal(<?= json_encode($a) ?>)'>Manage</button>
-                                <button class="small-btn danger" onclick='openRejectModal(<?= (int)$a["id"] ?>)'>Reject</button>
-                            </td>
-                        </tr>
-                    <?php endwhile; ?>
-                <?php else: ?>
-                    <tr><td colspan="7">No meter applications found.</td></tr>
-                <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
+            <div id="applications" class="tab-section active">
 
-    <!-- ================= ENQUIRIES ================= -->
+                <h3 class="section-title">Meter Application Approvals</h3>
 
-    <div id="enquiries" class="tab-section">
-        <div class="section-header">
-            <h3>Enquiry Desk</h3>
-            <p>Respond to customer enquiries and close completed enquiries.</p>
-        </div>
-
-        <div class="table-card">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Enquiry</th>
-                        <th>Customer</th>
-                        <th>Subject</th>
-                        <th>Status</th>
-                        <th>Assigned Staff</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                <?php if ($enquiries && $enquiries->num_rows > 0): ?>
-                    <?php while ($e = $enquiries->fetch_assoc()): ?>
-                        <tr>
-                            <td>
-                                <strong><?= clean($e['enquiry_ref']) ?></strong><br>
-                                <small><?= clean($e['created_at']) ?></small>
-                            </td>
-                            <td>
-                                <?= clean($e['customer_name']) ?><br>
-                                <small><?= clean($e['contact']) ?> | <?= clean($e['email']) ?></small>
-                            </td>
-                            <td>
-                                <?= clean($e['subject']) ?><br>
-                                <small><?= clean($e['enquiry_type']) ?></small>
-                            </td>
-                            <td><span class="status-badge"><?= clean($e['status']) ?></span></td>
-                            <td><?= clean($e['assigned_staff'] ?? 'Unassigned') ?></td>
-                            <td>
-                                <button class="small-btn" onclick='openEnquiryModal(<?= json_encode($e) ?>)'>Respond</button>
-                            </td>
-                        </tr>
-                    <?php endwhile; ?>
-                <?php else: ?>
-                    <tr><td colspan="6">No enquiries found.</td></tr>
-                <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- ================= COMPLAINTS ================= -->
-
-    <div id="complaints" class="tab-section">
-        <div class="section-header">
-            <h3>Complaint Desk</h3>
-            <p>Assign complaints, update progress, escalate critical claims and resolve cases.</p>
-        </div>
-
-        <div class="table-card">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Complaint</th>
-                        <th>Customer</th>
-                        <th>Issue</th>
-                        <th>Priority</th>
-                        <th>Status</th>
-                        <th>Assigned Staff</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                <?php if ($complaints && $complaints->num_rows > 0): ?>
-                    <?php while ($c = $complaints->fetch_assoc()): ?>
-                        <tr>
-                            <td>
-                                <strong><?= clean($c['complaint_ref']) ?></strong><br>
-                                <small><?= clean($c['created_at']) ?></small>
-                            </td>
-                            <td>
-                                <?= clean($c['customer_name']) ?><br>
-                                <small><?= clean($c['contact']) ?></small><br>
-                                <small>Meter: <?= clean($c['meter_serial']) ?></small>
-                            </td>
-                            <td>
-                                <?= clean($c['complaint_type']) ?><br>
-                                <small><?= clean($c['zone']) ?></small>
-                            </td>
-                            <td><span class="status-badge"><?= clean($c['priority']) ?></span></td>
-                            <td><span class="status-badge"><?= clean($c['status']) ?></span></td>
-                            <td><?= clean($c['assigned_staff'] ?? 'Unassigned') ?></td>
-                            <td>
-                                <button class="small-btn" onclick='openComplaintModal(<?= json_encode($c) ?>)'>Manage</button>
-                            </td>
-                        </tr>
-                    <?php endwhile; ?>
-                <?php else: ?>
-                    <tr><td colspan="7">No complaints found.</td></tr>
-                <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- ================= WATER RATIONING ================= -->
-
-    <div id="rationing" class="tab-section">
-        <div class="section-header">
-            <h3>Water Rationing Notices</h3>
-            <p>Create and manage notices visible on the customer portal.</p>
-        </div>
-
-        <form method="POST" class="form-card">
-            <input type="hidden" name="crm_action" value="save_rationing">
-
-            <div class="form-grid">
-                <div class="form-group">
-                    <label>Zone</label>
-                    <input type="text" name="zone" required>
+                <div class="insight-box">
+                    Review, approve, reject, assign officers, update meter serials and communicate application progress to customers.
                 </div>
 
-                <div class="form-group">
-                    <label>Rationing Day</label>
-                    <select name="rationing_day" required>
-                        <option value="">Select Day</option>
-                        <option>Monday</option>
-                        <option>Tuesday</option>
-                        <option>Wednesday</option>
-                        <option>Thursday</option>
-                        <option>Friday</option>
-                        <option>Saturday</option>
-                        <option>Sunday</option>
-                    </select>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Application</th>
+                                <th>Customer</th>
+                                <th>Meter</th>
+                                <th>Status</th>
+                                <th>Assigned Staff</th>
+                                <th>ID Copy</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                        <?php if ($applications && $applications->num_rows > 0): ?>
+                            <?php while ($a = $applications->fetch_assoc()): ?>
+                                <tr>
+                                    <td>
+                                        <strong><?= clean($a['application_ref']) ?></strong><br>
+                                        <small><?= clean($a['created_at'] ?? '') ?></small>
+                                    </td>
+
+                                    <td>
+                                        <?= clean($a['customer_name']) ?><br>
+                                        <small>ID: <?= clean($a['id_number']) ?> | <?= clean($a['contact']) ?></small><br>
+                                        <small>Zone: <?= clean($a['zone']) ?></small>
+                                    </td>
+
+                                    <td>
+                                        <?= clean($a['meter_type']) ?><br>
+                                        <small><?= clean($a['customer_type']) ?></small><br>
+                                        <small>Serial: <?= clean($a['meter_serial'] ?? '') ?></small>
+                                    </td>
+
+                                    <td>
+                                        <span class="badge warning"><?= clean($a['status'] ?? 'Pending') ?></span>
+                                    </td>
+
+                                    <td><?= clean($a['assigned_staff'] ?? 'Unassigned') ?></td>
+
+                                    <td>
+                                        <?php if (!empty($a['national_id_copy'])): ?>
+                                            <a class="link-btn" href="<?= clean('../../' . $a['national_id_copy']) ?>" target="_blank">View</a>
+                                        <?php else: ?>
+                                            <small>No file</small>
+                                        <?php endif; ?>
+                                    </td>
+
+                                    <td>
+                                        <button class="expand-btn" onclick='openApplicationModal(<?= json_encode($a) ?>)'>Manage</button>
+                                        <button class="expand-btn danger" onclick='openRejectModal(<?= (int)$a["id"] ?>)'>Reject</button>
+                                    </td>
+                                </tr>
+                            <?php endwhile; ?>
+                        <?php else: ?>
+                            <tr><td colspan="7">No meter applications found.</td></tr>
+                        <?php endif; ?>
+                        </tbody>
+                    </table>
                 </div>
 
-                <div class="form-group">
-                    <label>Start Time</label>
-                    <input type="time" name="start_time" required>
-                </div>
-
-                <div class="form-group">
-                    <label>End Time</label>
-                    <input type="time" name="end_time" required>
-                </div>
-
-                <div class="form-group">
-                    <label>Status</label>
-                    <select name="status">
-                        <option>Active</option>
-                        <option>Inactive</option>
-                    </select>
-                </div>
-
-                <div class="form-group full-width">
-                    <label>Notice</label>
-                    <textarea name="notice" required></textarea>
-                </div>
             </div>
 
-            <button class="submit-btn">Publish Notice</button>
-        </form>
+            <!-- ENQUIRIES -->
 
-        <div class="table-card">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Zone</th>
-                        <th>Day</th>
-                        <th>Time</th>
-                        <th>Notice</th>
-                        <th>Status</th>
-                        <th>Update</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if ($rationing && $rationing->num_rows > 0): ?>
-                        <?php while ($r = $rationing->fetch_assoc()): ?>
+            <div id="enquiries" class="tab-section">
+
+                <h3 class="section-title">Enquiry Desk</h3>
+
+                <div class="insight-box">
+                    Respond to customer enquiries, assign responsible officers and close completed enquiries.
+                </div>
+
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
                             <tr>
-                                <td><?= clean($r['zone']) ?></td>
-                                <td><?= clean($r['rationing_day']) ?></td>
-                                <td><?= clean($r['start_time']) ?> - <?= clean($r['end_time']) ?></td>
-                                <td><?= clean($r['notice']) ?></td>
-                                <td><span class="status-badge"><?= clean($r['status']) ?></span></td>
-                                <td>
-                                    <form method="POST" class="inline-form">
-                                        <input type="hidden" name="crm_action" value="update_rationing_status">
-                                        <input type="hidden" name="rationing_id" value="<?= (int)$r['id'] ?>">
-                                        <select name="status">
-                                            <option <?= $r['status'] === 'Active' ? 'selected' : '' ?>>Active</option>
-                                            <option <?= $r['status'] === 'Inactive' ? 'selected' : '' ?>>Inactive</option>
-                                        </select>
-                                        <button class="small-btn">Save</button>
-                                    </form>
-                                </td>
+                                <th>Enquiry</th>
+                                <th>Customer</th>
+                                <th>Subject</th>
+                                <th>Status</th>
+                                <th>Assigned Staff</th>
+                                <th>Action</th>
                             </tr>
-                        <?php endwhile; ?>
-                    <?php else: ?>
-                        <tr><td colspan="6">No rationing notices found.</td></tr>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
+                        </thead>
 
-    <!-- ================= AUDIT ================= -->
+                        <tbody>
+                        <?php if ($enquiries && $enquiries->num_rows > 0): ?>
+                            <?php while ($e = $enquiries->fetch_assoc()): ?>
+                                <tr>
+                                    <td>
+                                        <strong><?= clean($e['enquiry_ref']) ?></strong><br>
+                                        <small><?= clean($e['created_at'] ?? '') ?></small>
+                                    </td>
 
-    <div id="audit" class="tab-section">
-        <div class="section-header">
-            <h3>Audit Trail</h3>
-            <p>Recent back-office actions on applications, enquiries and complaints.</p>
-        </div>
+                                    <td>
+                                        <?= clean($e['customer_name']) ?><br>
+                                        <small><?= clean($e['contact']) ?> | <?= clean($e['email']) ?></small>
+                                    </td>
 
-        <div class="table-card">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Case Type</th>
-                        <th>Action</th>
-                        <th>Status Change</th>
-                        <th>Staff</th>
-                        <th>Notes</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if ($updates && $updates->num_rows > 0): ?>
-                        <?php while ($u = $updates->fetch_assoc()): ?>
+                                    <td>
+                                        <?= clean($e['subject']) ?><br>
+                                        <small><?= clean($e['enquiry_type']) ?></small>
+                                    </td>
+
+                                    <td><span class="badge good"><?= clean($e['status'] ?? 'Submitted') ?></span></td>
+
+                                    <td><?= clean($e['assigned_staff'] ?? 'Unassigned') ?></td>
+
+                                    <td>
+                                        <button class="expand-btn" onclick='openEnquiryModal(<?= json_encode($e) ?>)'>Respond</button>
+                                    </td>
+                                </tr>
+                            <?php endwhile; ?>
+                        <?php else: ?>
+                            <tr><td colspan="6">No enquiries found.</td></tr>
+                        <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>
+
+            <!-- COMPLAINTS -->
+
+            <div id="complaints" class="tab-section">
+
+                <h3 class="section-title">Complaint Desk</h3>
+
+                <div class="insight-box">
+                    Assign complaints, update progress, escalate urgent issues and record final resolution notes.
+                </div>
+
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
                             <tr>
-                                <td><?= clean($u['created_at']) ?></td>
-                                <td><?= clean($u['case_type']) ?></td>
-                                <td><?= clean($u['action_taken']) ?></td>
-                                <td><?= clean($u['old_status']) ?> → <?= clean($u['new_status']) ?></td>
-                                <td><?= clean($u['staff_name']) ?></td>
-                                <td><?= clean($u['notes']) ?></td>
+                                <th>Complaint</th>
+                                <th>Customer</th>
+                                <th>Issue</th>
+                                <th>Priority</th>
+                                <th>Status</th>
+                                <th>Assigned Staff</th>
+                                <th>Action</th>
                             </tr>
-                        <?php endwhile; ?>
-                    <?php else: ?>
-                        <tr><td colspan="6">No audit records found.</td></tr>
-                    <?php endif; ?>
-                </tbody>
-            </table>
+                        </thead>
+
+                        <tbody>
+                        <?php if ($complaints && $complaints->num_rows > 0): ?>
+                            <?php while ($c = $complaints->fetch_assoc()): ?>
+                                <tr>
+                                    <td>
+                                        <strong><?= clean($c['complaint_ref']) ?></strong><br>
+                                        <small><?= clean($c['created_at'] ?? '') ?></small>
+                                    </td>
+
+                                    <td>
+                                        <?= clean($c['customer_name']) ?><br>
+                                        <small><?= clean($c['contact']) ?></small><br>
+                                        <small>Meter: <?= clean($c['meter_serial']) ?></small>
+                                    </td>
+
+                                    <td>
+                                        <?= clean($c['complaint_type']) ?><br>
+                                        <small><?= clean($c['zone']) ?></small>
+                                    </td>
+
+                                    <td><span class="badge warning"><?= clean($c['priority']) ?></span></td>
+
+                                    <td><span class="badge critical"><?= clean($c['status'] ?? 'Submitted') ?></span></td>
+
+                                    <td><?= clean($c['assigned_staff'] ?? 'Unassigned') ?></td>
+
+                                    <td>
+                                        <button class="expand-btn" onclick='openComplaintModal(<?= json_encode($c) ?>)'>Manage</button>
+                                    </td>
+                                </tr>
+                            <?php endwhile; ?>
+                        <?php else: ?>
+                            <tr><td colspan="7">No complaints found.</td></tr>
+                        <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>
+
+            <!-- RATIONING -->
+
+            <div id="rationing" class="tab-section">
+
+                <h3 class="section-title">Water Rationing Notices</h3>
+
+                <div class="insight-box">
+                    Create and manage water rationing notices visible to customers through the customer portal.
+                </div>
+
+                <form method="POST" class="form-card">
+                    <input type="hidden" name="crm_action" value="save_rationing">
+
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Zone</label>
+                            <input type="text" name="zone" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Rationing Day</label>
+                            <select name="rationing_day" required>
+                                <option value="">Select Day</option>
+                                <option>Monday</option>
+                                <option>Tuesday</option>
+                                <option>Wednesday</option>
+                                <option>Thursday</option>
+                                <option>Friday</option>
+                                <option>Saturday</option>
+                                <option>Sunday</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Start Time</label>
+                            <input type="time" name="start_time" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label>End Time</label>
+                            <input type="time" name="end_time" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Status</label>
+                            <select name="status">
+                                <option>Active</option>
+                                <option>Inactive</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label>Notice</label>
+                            <textarea name="notice" required></textarea>
+                        </div>
+                    </div>
+
+                    <button class="btn">Publish Notice</button>
+                </form>
+
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Zone</th>
+                                <th>Day</th>
+                                <th>Time</th>
+                                <th>Notice</th>
+                                <th>Status</th>
+                                <th>Update</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            <?php if ($rationing && $rationing->num_rows > 0): ?>
+                                <?php while ($r = $rationing->fetch_assoc()): ?>
+                                    <tr>
+                                        <td><?= clean($r['zone']) ?></td>
+                                        <td><?= clean($r['rationing_day']) ?></td>
+                                        <td><?= clean($r['start_time']) ?> - <?= clean($r['end_time']) ?></td>
+                                        <td><?= clean($r['notice']) ?></td>
+                                        <td><span class="badge good"><?= clean($r['status']) ?></span></td>
+                                        <td>
+                                            <form method="POST" class="inline-form">
+                                                <input type="hidden" name="crm_action" value="update_rationing_status">
+                                                <input type="hidden" name="rationing_id" value="<?= (int)$r['id'] ?>">
+                                                <select name="status">
+                                                    <option <?= $r['status'] === 'Active' ? 'selected' : '' ?>>Active</option>
+                                                    <option <?= $r['status'] === 'Inactive' ? 'selected' : '' ?>>Inactive</option>
+                                                </select>
+                                                <button class="expand-btn">Save</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                <?php endwhile; ?>
+                            <?php else: ?>
+                                <tr><td colspan="6">No rationing notices found.</td></tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>
+
+            <!-- AUDIT -->
+
+            <div id="audit" class="tab-section">
+
+                <h3 class="section-title">Audit Trail</h3>
+
+                <div class="insight-box">
+                    Recent back-office actions on applications, enquiries and complaints.
+                </div>
+
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Case Type</th>
+                                <th>Action</th>
+                                <th>Status Change</th>
+                                <th>Staff</th>
+                                <th>Notes</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            <?php if ($updates && $updates->num_rows > 0): ?>
+                                <?php while ($u = $updates->fetch_assoc()): ?>
+                                    <tr>
+                                        <td><?= clean($u['created_at']) ?></td>
+                                        <td><?= clean($u['case_type']) ?></td>
+                                        <td><?= clean($u['action_taken']) ?></td>
+                                        <td><?= clean($u['old_status']) ?> → <?= clean($u['new_status']) ?></td>
+                                        <td><?= clean($u['staff_name']) ?></td>
+                                        <td><?= clean($u['notes']) ?></td>
+                                    </tr>
+                                <?php endwhile; ?>
+                            <?php else: ?>
+                                <tr><td colspan="6">No audit records found.</td></tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>
+
         </div>
+
+        <!-- RIGHT ALERT PANEL -->
+
+        <div class="panel">
+
+            <h3 class="section-title">Customer Service Alerts</h3>
+
+            <?php if($escalatedComplaints > 0): ?>
+                <div class="alert red">
+                    <strong><?= number_format($escalatedComplaints) ?> escalated complaint(s).</strong><br>
+                    Immediate management attention is recommended.
+                </div>
+            <?php endif; ?>
+
+            <?php if($openComplaints > 0): ?>
+                <div class="alert">
+                    <strong><?= number_format($openComplaints) ?> open complaint(s).</strong><br>
+                    Assign officers and update resolution progress.
+                </div>
+            <?php endif; ?>
+
+            <?php if($pendingApps > 0): ?>
+                <div class="alert blue">
+                    <strong><?= number_format($pendingApps) ?> pending meter application(s).</strong><br>
+                    Review applications and update customer responses.
+                </div>
+            <?php endif; ?>
+
+            <?php if($openEnquiries > 0): ?>
+                <div class="alert">
+                    <strong><?= number_format($openEnquiries) ?> open enquiry request(s).</strong><br>
+                    Respond to customer enquiries within the service timeline.
+                </div>
+            <?php endif; ?>
+
+            <?php if($activeRationing > 0): ?>
+                <div class="alert blue">
+                    <strong><?= number_format($activeRationing) ?> active rationing notice(s).</strong><br>
+                    Keep affected customers updated through the portal.
+                </div>
+            <?php endif; ?>
+
+            <?php if($openCases == 0 && $escalatedComplaints == 0): ?>
+                <div class="alert green">
+                    <strong>No major customer service alerts.</strong><br>
+                    Current customer service workload is within acceptable limits.
+                </div>
+            <?php endif; ?>
+
+            <div class="insight-box">
+                <strong>Executive Insight</strong><br><br>
+                The system currently has
+                <strong><?= number_format($totalCases) ?></strong> customer service case(s),
+                <strong><?= number_format($openCases) ?></strong> open or pending case(s), and
+                <strong><?= number_format($resolvedCases) ?></strong> resolved or approved case(s).
+            </div>
+
+            <div class="insight-box">
+                <strong>Recommended Operational Actions</strong><br><br>
+                1. Prioritize escalated complaints.<br>
+                2. Assign pending meter applications.<br>
+                3. Respond to open enquiries.<br>
+                4. Keep rationing notices updated.<br>
+                5. Use the audit trail to track staff actions.
+            </div>
+
+        </div>
+
     </div>
 
 </div>
 
-<!-- ================= APPLICATION MODAL ================= -->
+<!-- MODALS -->
 
 <div id="applicationModal" class="modal">
     <div class="modal-content">
@@ -704,12 +841,10 @@ $updates = $conn->query("SELECT * FROM customer_case_updates ORDER BY id DESC LI
                 </div>
             </div>
 
-            <button class="submit-btn">Save Application Update</button>
+            <button class="btn">Save Application Update</button>
         </form>
     </div>
 </div>
-
-<!-- ================= REJECT MODAL ================= -->
 
 <div id="rejectModal" class="modal">
     <div class="modal-content">
@@ -730,12 +865,10 @@ $updates = $conn->query("SELECT * FROM customer_case_updates ORDER BY id DESC LI
                 <textarea name="rejection_reason" required></textarea>
             </div>
 
-            <button class="submit-btn danger-btn">Reject Application</button>
+            <button class="btn danger-btn">Reject Application</button>
         </form>
     </div>
 </div>
-
-<!-- ================= ENQUIRY MODAL ================= -->
 
 <div id="enquiryModal" class="modal">
     <div class="modal-content">
@@ -779,12 +912,10 @@ $updates = $conn->query("SELECT * FROM customer_case_updates ORDER BY id DESC LI
                 </div>
             </div>
 
-            <button class="submit-btn">Save Response</button>
+            <button class="btn">Save Response</button>
         </form>
     </div>
 </div>
-
-<!-- ================= COMPLAINT MODAL ================= -->
 
 <div id="complaintModal" class="modal">
     <div class="modal-content">
@@ -854,139 +985,177 @@ $updates = $conn->query("SELECT * FROM customer_case_updates ORDER BY id DESC LI
                 </div>
             </div>
 
-            <button class="submit-btn">Save Complaint Update</button>
+            <button class="btn">Save Complaint Update</button>
         </form>
     </div>
 </div>
 
 <style>
-.page-content{
-    margin-left:260px;
-    margin-top:75px;
-    margin-bottom:60px;
-    padding:20px;
-    background:#f4f7fb;
-    min-height:calc(100vh - 135px);
-    font-family:Arial, sans-serif;
-}
-
-.module-header,
-.section-header,
-.form-card,
-.table-card,
-.filter-card,
-.summary-card{
-    background:#fff;
-    border:1px solid #e5e7eb;
-    border-radius:10px;
-    box-shadow:0 2px 6px rgba(0,0,0,0.04);
-}
-
-.module-header{
-    padding:18px 20px;
-    margin-bottom:18px;
-    border-left:4px solid #0a2a43;
-}
-
-.module-header h2{
+body{
     margin:0;
-    color:#0a2a43;
-    font-size:20px;
+    background:#f8fafc;
+    font-family:'Segoe UI',sans-serif;
+    color:#1e293b;
 }
 
-.module-header p,
-.section-header p{
-    margin:6px 0 0;
-    color:#64748b;
-    font-size:14px;
+.container{
+    margin-left:240px;
+    margin-top:80px;
+    padding:24px;
 }
 
-.summary-grid{
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
-    gap:12px;
-    margin-bottom:18px;
-}
-
-.summary-card{
-    padding:15px;
-}
-
-.summary-card span{
-    display:block;
-    color:#64748b;
-    font-size:13px;
-    margin-bottom:8px;
-}
-
-.summary-card strong{
-    color:#0a2a43;
-    font-size:22px;
-}
-
-.filter-card{
-    padding:14px;
-    margin-bottom:18px;
-}
-
-.filter-card form{
+.page-header{
     display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:15px;
     flex-wrap:wrap;
-    gap:10px;
+    margin-bottom:22px;
 }
 
-.filter-card input,
-.filter-card select,
-.filter-card button,
-.clear-btn{
-    padding:9px 11px;
-    border-radius:6px;
-    border:1px solid #d1d5db;
+.page-header h2{
+    margin:0;
+    font-size:26px;
+    font-weight:800;
+    color:#0f172a;
+}
+
+.page-header p{
+    margin:6px 0 0;
     font-size:13px;
+    color:#64748b;
 }
 
-.filter-card input{
-    min-width:260px;
+.header-badge{
+    background:#ecfdf3;
+    color:#15803d;
+    border:1px solid #bbf7d0;
+    padding:10px 14px;
+    border-radius:12px;
+    font-size:13px;
+    font-weight:700;
 }
 
-.filter-card button,
-.clear-btn{
-    background:#0a2a43;
-    color:#fff;
-    text-decoration:none;
-    cursor:pointer;
+.section-title{
+    margin:0 0 14px;
+    font-size:16px;
+    font-weight:800;
+    color:#0f172a;
+}
+
+.kpis{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+    gap:18px;
+}
+
+.kpi{
+    background:white;
+    border-radius:16px;
+    padding:20px;
+    border:1px solid #e2e8f0;
+    border-left:5px solid #1e7d4f;
+    box-shadow:0 4px 14px rgba(15,23,42,0.04);
+}
+
+.kpi.blue{ border-left-color:#1e3a8a; }
+.kpi.yellow{ border-left-color:#eab308; }
+.kpi.red{ border-left-color:#dc2626; }
+
+.kpi h3{
+    margin:0;
+    font-size:30px;
+    color:#0f172a;
+}
+
+.kpi p{
+    margin:8px 0 0;
+    font-size:13px;
+    color:#64748b;
+    font-weight:700;
+}
+
+.kpi small{
+    display:block;
+    margin-top:8px;
+    color:#94a3b8;
+    font-size:12px;
+}
+
+.filters{
+    margin-top:24px;
+    background:white;
+    padding:18px;
+    border-radius:16px;
+    border:1px solid #e2e8f0;
+    display:flex;
+    gap:12px;
+    flex-wrap:wrap;
+    align-items:center;
+}
+
+.filters input,
+.filters select{
+    padding:11px 12px;
+    border-radius:10px;
+    border:1px solid #dbe2ea;
+    font-size:13px;
+    min-width:180px;
+}
+
+.filters input{
+    min-width:300px;
+}
+
+button,
+.btn{
+    padding:11px 16px;
     border:none;
+    border-radius:10px;
+    background:#1e7d4f;
+    color:white;
+    cursor:pointer;
+    font-weight:700;
+    text-decoration:none;
+    font-size:13px;
+    display:inline-block;
 }
 
-.clear-btn{
-    background:#64748b;
+.btn-light{
+    background:#f8fafc;
+    color:#334155;
+    border:1px solid #dbe2ea;
 }
 
 .crm-tabs{
-    background:#ffffff;
-    padding:12px;
-    border-radius:10px;
-    display:flex;
-    flex-wrap:wrap;
-    gap:8px;
-    margin-bottom:18px;
-    box-shadow:0 2px 6px rgba(0,0,0,0.05);
+    margin-bottom:0;
 }
 
 .tab-btn{
-    border:1px solid #d1d5db;
-    background:#ffffff;
+    background:#f8fafc;
     color:#334155;
-    padding:8px 12px;
-    border-radius:6px;
-    font-size:13px;
-    cursor:pointer;
+    border:1px solid #dbe2ea;
 }
 
 .tab-btn.active{
-    background:#0a2a43;
-    color:#ffffff;
-    border-color:#0a2a43;
+    background:#1e7d4f;
+    color:white;
+    border-color:#1e7d4f;
+}
+
+.grid{
+    display:grid;
+    grid-template-columns:1fr 360px;
+    gap:20px;
+    margin-top:24px;
+}
+
+.panel{
+    background:white;
+    border-radius:16px;
+    border:1px solid #e2e8f0;
+    padding:20px;
+    box-shadow:0 4px 14px rgba(15,23,42,0.03);
 }
 
 .tab-section{
@@ -997,28 +1166,126 @@ $updates = $conn->query("SELECT * FROM customer_case_updates ORDER BY id DESC LI
     display:block;
 }
 
-.section-header{
-    padding:16px 18px;
-    margin-bottom:14px;
-}
-
-.section-header h3{
-    margin:0;
-    color:#0a2a43;
-    font-size:18px;
-}
-
-.form-card,
-.table-card{
-    padding:18px;
-    margin-bottom:18px;
+.table-wrapper{
     overflow-x:auto;
+    margin-top:14px;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+}
+
+th{
+    background:#f8fafc;
+    color:#334155;
+    padding:14px;
+    text-align:left;
+    font-size:13px;
+    border-bottom:2px solid #e2e8f0;
+    white-space:nowrap;
+}
+
+td{
+    padding:14px;
+    border-bottom:1px solid #f1f5f9;
+    font-size:13px;
+    vertical-align:top;
+}
+
+tr:hover td{
+    background:#fcfcfc;
+}
+
+.badge{
+    padding:6px 11px;
+    border-radius:20px;
+    font-size:12px;
+    font-weight:800;
+    display:inline-block;
+}
+
+.critical{
+    background:#fef2f2;
+    color:#dc2626;
+}
+
+.warning{
+    background:#fffbeb;
+    color:#ca8a04;
+}
+
+.good{
+    background:#ecfdf3;
+    color:#15803d;
+}
+
+.expand-btn{
+    background:#f8fafc;
+    border:1px solid #dbe2ea;
+    color:#334155;
+    padding:7px 10px;
+    border-radius:8px;
+    cursor:pointer;
+    font-size:12px;
+    font-weight:700;
+    margin:2px;
+}
+
+.expand-btn.danger,
+.danger-btn{
+    background:#7f1d1d !important;
+    color:white !important;
+    border-color:#7f1d1d !important;
+}
+
+.alert{
+    border-left:4px solid #facc15;
+    padding:14px;
+    border-radius:12px;
+    margin-bottom:12px;
+    font-size:13px;
+    background:#fffbeb;
+    color:#713f12;
+}
+
+.alert.red{
+    background:#fef2f2;
+    color:#991b1b;
+    border-left-color:#dc2626;
+}
+
+.alert.green{
+    background:#ecfdf3;
+    color:#166534;
+    border-left-color:#22c55e;
+}
+
+.alert.blue{
+    background:#eff6ff;
+    color:#1e3a8a;
+    border-left-color:#1e3a8a;
+}
+
+.insight-box{
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+    padding:14px;
+    border-radius:12px;
+    margin-top:14px;
+    font-size:13px;
+    color:#475569;
+    line-height:1.7;
+}
+
+.form-card{
+    margin-top:14px;
 }
 
 .form-grid{
     display:grid;
     grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
-    gap:15px;
+    gap:14px;
 }
 
 .form-group{
@@ -1028,121 +1295,54 @@ $updates = $conn->query("SELECT * FROM customer_case_updates ORDER BY id DESC LI
 }
 
 .form-group label{
-    font-size:13px;
-    color:#334155;
-    font-weight:600;
     margin-bottom:6px;
+    color:#334155;
+    font-size:13px;
+    font-weight:700;
 }
 
 .form-group input,
 .form-group select,
 .form-group textarea,
 .inline-form select{
-    padding:9px;
-    border:1px solid #d1d5db;
-    border-radius:6px;
-    font-size:14px;
+    padding:11px 12px;
+    border-radius:10px;
+    border:1px solid #dbe2ea;
+    font-size:13px;
+    background:white;
+    color:#1e293b;
 }
 
 .form-group textarea{
-    min-height:90px;
+    min-height:100px;
     resize:vertical;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus{
+    outline:none;
+    border-color:#1e7d4f;
 }
 
 .full-width{
     grid-column:1/-1;
 }
 
-.submit-btn,
-.small-btn{
-    background:#0a2a43;
-    color:white;
-    border:none;
-    border-radius:6px;
-    cursor:pointer;
-}
-
-.submit-btn{
-    padding:9px 15px;
-    font-size:14px;
-    margin-top:10px;
-}
-
-.small-btn{
-    padding:6px 10px;
-    font-size:12px;
-    margin:2px;
-}
-
-.danger,
-.danger-btn{
-    background:#7f1d1d !important;
-}
-
-table{
-    width:100%;
-    border-collapse:collapse;
-    font-size:14px;
-}
-
-th{
-    background:#f8fafc;
-    color:#334155;
-    text-align:left;
-    padding:10px;
-    border-bottom:1px solid #e5e7eb;
-}
-
-td{
-    padding:10px;
-    border-bottom:1px solid #e5e7eb;
-    color:#334155;
-    vertical-align:top;
-}
-
-small{
-    color:#64748b;
-}
-
-.status-badge{
-    display:inline-block;
-    padding:4px 8px;
-    border-radius:20px;
-    font-size:12px;
-    background:#f1f5f9;
-    color:#334155;
-    border:1px solid #cbd5e1;
-}
-
-.link-btn{
-    color:#0a2a43;
-    font-weight:600;
-    text-decoration:none;
-}
-
-.alert{
-    padding:12px 15px;
-    border-radius:8px;
-    margin-bottom:18px;
-    font-size:14px;
-}
-
-.alert.success{
-    background:#f0fdf4;
-    color:#166534;
-    border-left:4px solid #16a34a;
-}
-
-.alert.error{
-    background:#fef2f2;
-    color:#991b1b;
-    border-left:4px solid #dc2626;
-}
-
 .inline-form{
     display:flex;
     gap:6px;
     align-items:center;
+}
+
+.link-btn{
+    color:#1e3a8a;
+    font-weight:800;
+    text-decoration:none;
+}
+
+small{
+    color:#64748b;
 }
 
 .modal{
@@ -1164,14 +1364,14 @@ small{
     max-width:900px;
     margin:40px auto;
     padding:22px;
-    border-radius:10px;
+    border-radius:16px;
     position:relative;
     box-shadow:0 10px 30px rgba(0,0,0,0.2);
 }
 
 .modal-content h3{
     margin-top:0;
-    color:#0a2a43;
+    color:#0f172a;
 }
 
 .close-btn{
@@ -1183,6 +1383,34 @@ small{
     font-size:25px;
     cursor:pointer;
     color:#334155;
+}
+
+@media(max-width:1000px){
+    .grid{
+        grid-template-columns:1fr;
+    }
+
+    .container{
+        margin-left:0;
+    }
+
+    .filters{
+        flex-direction:column;
+        align-items:stretch;
+    }
+
+    .filters input,
+    .filters select,
+    .filters button,
+    .filters .btn,
+    .tab-btn{
+        width:100%;
+        box-sizing:border-box;
+    }
+
+    .form-grid{
+        grid-template-columns:1fr;
+    }
 }
 </style>
 

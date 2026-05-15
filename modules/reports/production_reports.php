@@ -5,10 +5,8 @@ if (!isset($conn) || $conn->connect_error) {
     die("Database connection error.");
 }
 
-/* ================= HELPERS ================= */
-
 function clean($value){
-    return htmlspecialchars(trim($value ?? ''), ENT_QUOTES, 'UTF-8');
+    return htmlspecialchars(trim((string)($value ?? '')), ENT_QUOTES, 'UTF-8');
 }
 
 function tableExists($conn, $table){
@@ -19,9 +17,11 @@ function tableExists($conn, $table){
 
 function columnExists($conn, $table, $column){
     if (!tableExists($conn, $table)) return false;
+
     $table = $conn->real_escape_string($table);
     $column = $conn->real_escape_string($column);
     $res = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$column'");
+
     return $res && $res->num_rows > 0;
 }
 
@@ -29,270 +29,151 @@ function getCol($conn, $table, $options){
     foreach ($options as $col) {
         if (columnExists($conn, $table, $col)) return $col;
     }
+
     return null;
 }
 
-function money($amount){
-    return "KSh " . number_format((float)$amount, 2);
+if (!tableExists($conn, 'meters')) {
+    die("<div class='page-content'>Meters table was not found.</div>");
 }
 
-/* ================= TABLE DETECTION ================= */
-
-$pumpedTable = '';
-
-foreach (['pumped_volumes', 'pumped_volume', 'water_production', 'production_volumes'] as $tbl) {
-    if (tableExists($conn, $tbl)) {
-        $pumpedTable = $tbl;
-        break;
-    }
+if (!tableExists($conn, 'pumped_volume_entries')) {
+    die("<div class='page-content'>Pumped volume table was not found.</div>");
 }
 
-$billTable = '';
-
-foreach (['bills', 'billing', 'customer_bills', 'meter_bills'] as $tbl) {
-    if (tableExists($conn, $tbl)) {
-        $billTable = $tbl;
-        break;
-    }
+if (!tableExists($conn, 'meter_readings')) {
+    die("<div class='page-content'>Meter readings table was not found.</div>");
 }
 
-if ($pumpedTable === '') {
-    die("<div class='page-content'>No pumped volume table was found. Expected table: pumped_volumes, pumped_volume, water_production or production_volumes.</div>");
+$serialCol = getCol($conn, 'meters', ['serial_number','meter_serial','serial','meter_no']);
+$zoneCol = getCol($conn, 'meters', ['zone','zone_name','location']);
+$statusCol = getCol($conn, 'meters', ['status','meter_status']);
+$customerCol = getCol($conn, 'meters', ['customer_name','name']);
+$customerTypeCol = getCol($conn, 'meters', ['customer_type','type']);
+
+if (!$serialCol) {
+    die("<div class='page-content'>Meter serial column was not found.</div>");
 }
 
-/* ================= COLUMN MAPPING ================= */
-
-$pumpDateCol = getCol($conn, $pumpedTable, ['record_date','date_recorded','pumping_date','production_date','created_at']);
-$pumpSourceCol = getCol($conn, $pumpedTable, ['source','source_name','water_source']);
-$pumpZoneCol = getCol($conn, $pumpedTable, ['zone','zone_name']);
-$pumpVolumeCol = getCol($conn, $pumpedTable, ['volume','pumped_volume','quantity','total_volume','litres','cubic_meters']);
-$pumpStatusCol = getCol($conn, $pumpedTable, ['status']);
-
-$billDateCol = $billTable ? getCol($conn, $billTable, ['billing_date','bill_date','date_recorded','created_at']) : null;
-$billConsumptionCol = $billTable ? getCol($conn, $billTable, ['consumption','units_consumed','consumed_units','volume_consumed','billed_volume']) : null;
-$billAmountCol = $billTable ? getCol($conn, $billTable, ['amount','bill_amount','total_amount']) : null;
-$billMeterCol = $billTable ? getCol($conn, $billTable, ['meter_serial','serial_number','meter_no']) : null;
-$billZoneCol = $billTable ? getCol($conn, $billTable, ['zone','zone_name']) : null;
-
-$meterSerialCol = tableExists($conn, 'meters') ? getCol($conn, 'meters', ['serial_number','meter_serial','serial','meter_no']) : null;
-$meterZoneCol = tableExists($conn, 'meters') ? getCol($conn, 'meters', ['zone','zone_name','location']) : null;
-
-if (!$pumpVolumeCol) {
-    die("<div class='page-content'>Pumped volume column was not found in $pumpedTable.</div>");
-}
-
-/* ================= FILTERS ================= */
-
-$from = $_GET['from'] ?? '';
-$to = $_GET['to'] ?? '';
+$from = $_GET['from'] ?? date('Y-m-01');
+$to = $_GET['to'] ?? date('Y-m-t');
 $zone = $_GET['zone'] ?? '';
-$source = $_GET['source'] ?? '';
+$customer_type = $_GET['customer_type'] ?? '';
 $status = $_GET['status'] ?? '';
 $search = $_GET['search'] ?? '';
 
-$hasFilter = ($from !== '' || $to !== '' || $zone !== '' || $source !== '' || $status !== '' || $search !== '');
-
 $where = "WHERE 1=1";
 
-if ($from !== '' && $pumpDateCol) {
-    $safeFrom = $conn->real_escape_string($from);
-    $where .= " AND DATE(`$pumpDateCol`) >= '$safeFrom'";
-}
-
-if ($to !== '' && $pumpDateCol) {
-    $safeTo = $conn->real_escape_string($to);
-    $where .= " AND DATE(`$pumpDateCol`) <= '$safeTo'";
-}
-
-if ($zone !== '' && $pumpZoneCol) {
+if ($zone !== '' && $zoneCol) {
     $safeZone = $conn->real_escape_string($zone);
-    $where .= " AND `$pumpZoneCol` = '$safeZone'";
+    $where .= " AND m.`$zoneCol` = '$safeZone'";
 }
 
-if ($source !== '' && $pumpSourceCol) {
-    $safeSource = $conn->real_escape_string($source);
-    $where .= " AND `$pumpSourceCol` = '$safeSource'";
+if ($customer_type !== '' && $customerTypeCol) {
+    $safeType = $conn->real_escape_string($customer_type);
+    $where .= " AND m.`$customerTypeCol` = '$safeType'";
 }
 
-if ($status !== '' && $pumpStatusCol) {
+if ($status !== '' && $statusCol) {
     $safeStatus = $conn->real_escape_string($status);
-    $where .= " AND `$pumpStatusCol` = '$safeStatus'";
+    $where .= " AND m.`$statusCol` = '$safeStatus'";
 }
 
 if ($search !== '') {
     $safeSearch = $conn->real_escape_string($search);
-    $searchParts = [];
+    $parts = [];
 
-    foreach ([$pumpSourceCol, $pumpZoneCol, $pumpStatusCol] as $col) {
+    foreach ([$serialCol, $customerCol, $zoneCol, $customerTypeCol, $statusCol] as $col) {
         if ($col) {
-            $searchParts[] = "`$col` LIKE '%$safeSearch%'";
+            $parts[] = "m.`$col` LIKE '%$safeSearch%'";
         }
     }
 
-    if (!empty($searchParts)) {
-        $where .= " AND (" . implode(" OR ", $searchParts) . ")";
+    if (!empty($parts)) {
+        $where .= " AND (" . implode(" OR ", $parts) . ")";
     }
 }
 
-/* ================= PUMPED DATA ================= */
+$safeFrom = $conn->real_escape_string($from);
+$safeTo = $conn->real_escape_string($to);
 
-$pumpedQuery = "
-    SELECT *
-    FROM `$pumpedTable`
-    $where
-    ORDER BY " . ($pumpDateCol ? "`$pumpDateCol` DESC" : "id DESC") . "
+$sql = "
+SELECT
+    m.id AS meter_id,
+    m.`$serialCol` AS serial_number,
+    " . ($customerCol ? "m.`$customerCol`" : "''") . " AS customer_name,
+    " . ($zoneCol ? "m.`$zoneCol`" : "''") . " AS zone_name,
+    " . ($customerTypeCol ? "m.`$customerTypeCol`" : "''") . " AS customer_type,
+    " . ($statusCol ? "m.`$statusCol`" : "''") . " AS meter_status,
+
+    COALESCE(p.entry_count,0) AS entry_count,
+    COALESCE(p.produced_volume,0) AS produced_volume,
+    COALESCE(p.last_pumped_date,'') AS last_pumped_date,
+    COALESCE(r.billed_volume,0) AS billed_volume,
+
+    GREATEST(COALESCE(p.produced_volume,0) - COALESCE(r.billed_volume,0),0) AS nrw_volume,
+
+    CASE
+        WHEN COALESCE(p.produced_volume,0) > 0
+        THEN ROUND((GREATEST(COALESCE(p.produced_volume,0) - COALESCE(r.billed_volume,0),0) / COALESCE(p.produced_volume,0)) * 100, 2)
+        ELSE 0
+    END AS nrw_percent,
+
+    CASE
+        WHEN COALESCE(p.produced_volume,0) > 0
+        THEN ROUND((COALESCE(r.billed_volume,0) / COALESCE(p.produced_volume,0)) * 100, 2)
+        ELSE 0
+    END AS revenue_water_percent
+
+FROM meters m
+
+LEFT JOIN (
+    SELECT
+        meter_id,
+        COUNT(id) AS entry_count,
+        SUM(volume_m3) AS produced_volume,
+        MAX(pumped_date) AS last_pumped_date
+    FROM pumped_volume_entries
+    WHERE pumped_date BETWEEN '$safeFrom' AND '$safeTo'
+    GROUP BY meter_id
+) p ON p.meter_id = m.id
+
+LEFT JOIN (
+    SELECT
+        meter_id,
+        SUM(consumption) AS billed_volume
+    FROM meter_readings
+    WHERE DATE(reading_date) BETWEEN '$safeFrom' AND '$safeTo'
+    GROUP BY meter_id
+) r ON r.meter_id = m.id
+
+$where
+
+ORDER BY produced_volume DESC, nrw_percent DESC
 ";
 
-$pumpedResult = $conn->query($pumpedQuery);
+$reportRows = $conn->query($sql);
+$rows = [];
 
-/* ================= REPORT ROWS ================= */
-
-$reportRows = [];
-
-$totalPumped = 0;
-$totalBilledConsumption = 0;
-$totalRevenue = 0;
-
-if ($pumpedResult) {
-    while ($p = $pumpedResult->fetch_assoc()) {
-
-        $recordDate = $pumpDateCol ? ($p[$pumpDateCol] ?? '') : '';
-        $recordDay = $recordDate ? date('Y-m-d', strtotime($recordDate)) : '';
-        $recordSource = $pumpSourceCol ? ($p[$pumpSourceCol] ?? '') : '';
-        $recordZone = $pumpZoneCol ? ($p[$pumpZoneCol] ?? '') : '';
-        $recordStatus = $pumpStatusCol ? ($p[$pumpStatusCol] ?? '') : '';
-        $pumpedVolume = (float)($p[$pumpVolumeCol] ?? 0);
-
-        $billedConsumption = 0;
-        $revenue = 0;
-
-        if ($billTable && $billConsumptionCol) {
-
-            $billWhere = "WHERE 1=1";
-
-            if ($recordDay && $billDateCol) {
-                $safeDay = $conn->real_escape_string($recordDay);
-                $billWhere .= " AND DATE(`$billDateCol`) = '$safeDay'";
-            }
-
-            if ($recordZone !== '') {
-                $safeRecordZone = $conn->real_escape_string($recordZone);
-
-                if ($billZoneCol) {
-                    $billWhere .= " AND `$billZoneCol` = '$safeRecordZone'";
-                } elseif ($billMeterCol && $meterSerialCol && $meterZoneCol && tableExists($conn, 'meters')) {
-                    $billWhere .= " AND `$billMeterCol` IN (
-                        SELECT `$meterSerialCol`
-                        FROM meters
-                        WHERE `$meterZoneCol` = '$safeRecordZone'
-                    )";
-                }
-            }
-
-            $billSql = "
-                SELECT 
-                    SUM(`$billConsumptionCol`) AS total_consumption
-                    " . ($billAmountCol ? ", SUM(`$billAmountCol`) AS total_revenue" : ", 0 AS total_revenue") . "
-                FROM `$billTable`
-                $billWhere
-            ";
-
-            $billRes = $conn->query($billSql);
-
-            if ($billRes) {
-                $b = $billRes->fetch_assoc();
-                $billedConsumption = (float)($b['total_consumption'] ?? 0);
-                $revenue = (float)($b['total_revenue'] ?? 0);
-            }
-        }
-
-        $nrwVolume = $pumpedVolume - $billedConsumption;
-        $nrwPercent = $pumpedVolume > 0 ? round(($nrwVolume / $pumpedVolume) * 100, 2) : 0;
-        $efficiency = $pumpedVolume > 0 ? round(($billedConsumption / $pumpedVolume) * 100, 2) : 0;
-
-        $totalPumped += $pumpedVolume;
-        $totalBilledConsumption += $billedConsumption;
-        $totalRevenue += $revenue;
-
-        $reportRows[] = [
-            'date' => $recordDay,
-            'source' => $recordSource,
-            'zone' => $recordZone,
-            'pumped' => $pumpedVolume,
-            'billed' => $billedConsumption,
-            'nrw_volume' => $nrwVolume,
-            'nrw_percent' => $nrwPercent,
-            'efficiency' => $efficiency,
-            'revenue' => $revenue,
-            'status' => $recordStatus
-        ];
+if ($reportRows) {
+    while($row = $reportRows->fetch_assoc()) {
+        $rows[] = $row;
     }
 }
 
-$totalNRW = $totalPumped - $totalBilledConsumption;
-$overallNRWPercent = $totalPumped > 0 ? round(($totalNRW / $totalPumped) * 100, 2) : 0;
-$overallEfficiency = $totalPumped > 0 ? round(($totalBilledConsumption / $totalPumped) * 100, 2) : 0;
-$revenuePerUnit = $totalPumped > 0 ? round($totalRevenue / $totalPumped, 2) : 0;
+$filteredRecords = count($rows);
 
-/* ================= FILTER VALUES ================= */
+$zones = $zoneCol
+    ? $conn->query("SELECT DISTINCT `$zoneCol` AS v FROM meters WHERE `$zoneCol` IS NOT NULL AND `$zoneCol`!='' ORDER BY `$zoneCol` ASC")
+    : null;
 
-$zones = $pumpZoneCol ? $conn->query("SELECT DISTINCT `$pumpZoneCol` AS v FROM `$pumpedTable` WHERE `$pumpZoneCol` IS NOT NULL AND `$pumpZoneCol`!='' ORDER BY `$pumpZoneCol` ASC") : null;
-$sources = $pumpSourceCol ? $conn->query("SELECT DISTINCT `$pumpSourceCol` AS v FROM `$pumpedTable` WHERE `$pumpSourceCol` IS NOT NULL AND `$pumpSourceCol`!='' ORDER BY `$pumpSourceCol` ASC") : null;
-$statuses = $pumpStatusCol ? $conn->query("SELECT DISTINCT `$pumpStatusCol` AS v FROM `$pumpedTable` WHERE `$pumpStatusCol` IS NOT NULL AND `$pumpStatusCol`!='' ORDER BY `$pumpStatusCol` ASC") : null;
+$statuses = $statusCol
+    ? $conn->query("SELECT DISTINCT `$statusCol` AS v FROM meters WHERE `$statusCol` IS NOT NULL AND `$statusCol`!='' ORDER BY `$statusCol` ASC")
+    : null;
 
-/* ================= BREAKDOWNS ================= */
-
-$zoneBreakdown = [];
-$sourceBreakdown = [];
-
-foreach ($reportRows as $r) {
-    $z = $r['zone'] ?: 'Unspecified';
-    $s = $r['source'] ?: 'Unspecified';
-
-    if (!isset($zoneBreakdown[$z])) {
-        $zoneBreakdown[$z] = ['pumped' => 0, 'billed' => 0, 'nrw' => 0];
-    }
-
-    if (!isset($sourceBreakdown[$s])) {
-        $sourceBreakdown[$s] = ['pumped' => 0, 'billed' => 0, 'nrw' => 0];
-    }
-
-    $zoneBreakdown[$z]['pumped'] += $r['pumped'];
-    $zoneBreakdown[$z]['billed'] += $r['billed'];
-    $zoneBreakdown[$z]['nrw'] += $r['nrw_volume'];
-
-    $sourceBreakdown[$s]['pumped'] += $r['pumped'];
-    $sourceBreakdown[$s]['billed'] += $r['billed'];
-    $sourceBreakdown[$s]['nrw'] += $r['nrw_volume'];
-}
-
-uasort($zoneBreakdown, fn($a, $b) => $b['nrw'] <=> $a['nrw']);
-uasort($sourceBreakdown, fn($a, $b) => $b['nrw'] <=> $a['nrw']);
-
-/* ================= RISK FLAGS ================= */
-
-$riskFlags = [];
-
-if ($overallNRWPercent >= 40) {
-    $riskFlags[] = "Critical NRW level detected at $overallNRWPercent%. Immediate leakage, illegal connection, metering and billing audit is recommended.";
-} elseif ($overallNRWPercent >= 25) {
-    $riskFlags[] = "High NRW level detected at $overallNRWPercent%. Investigate distribution losses and billing gaps.";
-} else {
-    $riskFlags[] = "NRW level is currently within a manageable range based on available data.";
-}
-
-if ($totalPumped > 0 && $totalBilledConsumption <= 0) {
-    $riskFlags[] = "Pumped volume exists but billed consumption is missing. Check billing/consumption records.";
-}
-
-if ($totalRevenue <= 0 && $totalBilledConsumption > 0) {
-    $riskFlags[] = "Consumption is recorded but revenue values are missing. Check billing amount records.";
-}
-
-if (count($reportRows) === 0) {
-    $riskFlags[] = "No production records found for the selected filters.";
-}
-
+$types = $customerTypeCol
+    ? $conn->query("SELECT DISTINCT `$customerTypeCol` AS v FROM meters WHERE `$customerTypeCol` IS NOT NULL AND `$customerTypeCol`!='' ORDER BY `$customerTypeCol` ASC")
+    : null;
 ?>
 
 <link rel="stylesheet" href="https://cdn.datatables.net/2.0.8/css/dataTables.dataTables.min.css">
@@ -302,49 +183,25 @@ if (count($reportRows) === 0) {
 
     <div class="module-header no-print">
         <div>
-            <h2>Production & Non-Revenue Water Reports</h2>
-            <p>Enterprise analysis of pumped volumes, billed consumption, NRW losses, revenue efficiency and water accountability.</p>
-        </div>
-
-        <div class="header-actions">
-            <div class="dropdown">
-                <button type="button" class="download-btn">Download Report ▾</button>
-                <div class="dropdown-content">
-                    <a href="#" onclick="triggerExport('excel'); return false;">Excel</a>
-                    <a href="#" onclick="triggerExport('pdf'); return false;">PDF</a>
-                </div>
-            </div>
-
-            <button type="button" onclick="printFilteredReport()" class="print-btn">Print Data</button>
+            <h2>Production Reports</h2>
+            <p>Filtered production, billed consumption, NRW, revenue water, zones and customer category reporting.</p>
         </div>
     </div>
 
     <form method="GET" class="filter-card no-print">
-        <input type="hidden" name="page" value="<?= clean($_GET['page'] ?? 'reports/production_reports') ?>">
+        <input type="hidden" name="page" value="<?= clean($_GET['page'] ?? 'modules/reports/production_reports.php') ?>">
 
-        <div>
+        <div class="filter-field">
             <label>From</label>
             <input type="date" name="from" value="<?= clean($from) ?>">
         </div>
 
-        <div>
+        <div class="filter-field">
             <label>To</label>
             <input type="date" name="to" value="<?= clean($to) ?>">
         </div>
 
-        <div>
-            <label>Source</label>
-            <select name="source">
-                <option value="">All Sources</option>
-                <?php if ($sources): while($s = $sources->fetch_assoc()): ?>
-                    <option value="<?= clean($s['v']) ?>" <?= $source === $s['v'] ? 'selected' : '' ?>>
-                        <?= clean($s['v']) ?>
-                    </option>
-                <?php endwhile; endif; ?>
-            </select>
-        </div>
-
-        <div>
+        <div class="filter-field">
             <label>Zone</label>
             <select name="zone">
                 <option value="">All Zones</option>
@@ -356,255 +213,285 @@ if (count($reportRows) === 0) {
             </select>
         </div>
 
-        <?php if ($pumpStatusCol): ?>
-            <div>
-                <label>Status</label>
-                <select name="status">
-                    <option value="">All Statuses</option>
-                    <?php if ($statuses): while($st = $statuses->fetch_assoc()): ?>
-                        <option value="<?= clean($st['v']) ?>" <?= $status === $st['v'] ? 'selected' : '' ?>>
-                            <?= clean($st['v']) ?>
-                        </option>
-                    <?php endwhile; endif; ?>
-                </select>
-            </div>
-        <?php endif; ?>
-
-        <div class="search-box">
-            <label>Search</label>
-            <input type="text" name="search" value="<?= clean($search) ?>" placeholder="Source, zone, status...">
+        <div class="filter-field">
+            <label>Customer Type</label>
+            <select name="customer_type">
+                <option value="">All Customer Types</option>
+                <?php if ($types): while($t = $types->fetch_assoc()): ?>
+                    <option value="<?= clean($t['v']) ?>" <?= $customer_type === $t['v'] ? 'selected' : '' ?>>
+                        <?= clean($t['v']) ?>
+                    </option>
+                <?php endwhile; endif; ?>
+            </select>
         </div>
 
-        <button type="submit">Apply Filters</button>
-        <a class="clear-btn" href="dashboard.php?page=reports/production_reports">Reset</a>
+        <div class="filter-field">
+            <label>Status</label>
+            <select name="status">
+                <option value="">All Statuses</option>
+                <?php if ($statuses): while($s = $statuses->fetch_assoc()): ?>
+                    <option value="<?= clean($s['v']) ?>" <?= $status === $s['v'] ? 'selected' : '' ?>>
+                        <?= clean($s['v']) ?>
+                    </option>
+                <?php endwhile; endif; ?>
+            </select>
+        </div>
+
+        <div class="filter-field search-box">
+            <label>Search</label>
+            <input type="text" name="search" value="<?= clean($search) ?>" placeholder="Serial, customer, zone...">
+        </div>
+
+        <div class="filter-actions">
+            <button type="submit">Apply Filters</button>
+            <a href="dashboard.php?page=modules/reports/production_reports.php" class="clear-btn">Reset</a>
+        </div>
     </form>
 
-    <?php if (!$hasFilter): ?>
-        <div class="filter-warning no-print">
-            Please select at least one filter before downloading or printing.
-        </div>
-    <?php endif; ?>
-
-    <div id="printArea">
-
-        <div class="report-title">
-            <h3>WOWASCO Production & Non-Revenue Water Report</h3>
-            <p>
-                Generated on <?= date('Y-m-d H:i:s') ?> |
-                Filtered Records: <?= number_format(count($reportRows)) ?>
-            </p>
-            <p>
-                Filters:
-                From: <?= clean($from ?: 'Any') ?> |
-                To: <?= clean($to ?: 'Any') ?> |
-                Source: <?= clean($source ?: 'All') ?> |
-                Zone: <?= clean($zone ?: 'All') ?> |
-                Status: <?= clean($status ?: 'All') ?> |
-                Search: <?= clean($search ?: 'None') ?>
-            </p>
-        </div>
-
-        <div class="kpi-grid">
-            <div class="kpi-card">
-                <span>Total Pumped Volume</span>
-                <strong><?= number_format($totalPumped, 2) ?></strong>
-                <small>All filtered production</small>
+    <div class="table-panel">
+        <div class="table-toolbar no-print">
+            <div class="table-count">
+                <span>Production Records</span>
+                <strong><?= number_format($filteredRecords) ?></strong>
             </div>
 
-            <div class="kpi-card">
-                <span>Billed Consumption</span>
-                <strong><?= number_format($totalBilledConsumption, 2) ?></strong>
-                <small>Matched billed volume</small>
-            </div>
+            <div class="table-actions">
+                <div class="dropdown">
+                    <button type="button" class="download-btn">Download Report &#9662;</button>
 
-            <div class="kpi-card">
-                <span>NRW Volume</span>
-                <strong><?= number_format($totalNRW, 2) ?></strong>
-                <small>Pumped minus billed</small>
-            </div>
+                    <div class="dropdown-content">
+                        <a href="#" onclick="triggerExport('excel'); return false;">Excel</a>
+                        <a href="#" onclick="triggerExport('pdf'); return false;">PDF</a>
+                    </div>
+                </div>
 
-            <div class="kpi-card">
-                <span>NRW Percentage</span>
-                <strong><?= number_format($overallNRWPercent, 2) ?>%</strong>
-                <small>Loss indicator</small>
-            </div>
-
-            <div class="kpi-card">
-                <span>Billing Efficiency</span>
-                <strong><?= number_format($overallEfficiency, 2) ?>%</strong>
-                <small>Billed vs pumped</small>
-            </div>
-
-            <div class="kpi-card">
-                <span>Total Revenue</span>
-                <strong><?= money($totalRevenue) ?></strong>
-                <small>From matched bills</small>
-            </div>
-
-            <div class="kpi-card">
-                <span>Revenue Per Unit</span>
-                <strong><?= money($revenuePerUnit) ?></strong>
-                <small>Revenue / pumped volume</small>
-            </div>
-
-            <div class="kpi-card">
-                <span>Report Records</span>
-                <strong><?= number_format(count($reportRows)) ?></strong>
-                <small>Filtered production entries</small>
+                <button type="button" onclick="printFilteredReport()" class="print-btn">Print Data</button>
             </div>
         </div>
 
-        <div class="report-grid two">
-            <div class="report-card">
-                <h3>NRW by Zone</h3>
-
-                <?php if (!empty($zoneBreakdown)): ?>
-                    <?php foreach (array_slice($zoneBreakdown, 0, 10, true) as $zName => $v): ?>
-                        <?php $pct = $v['pumped'] > 0 ? round(($v['nrw'] / $v['pumped']) * 100, 2) : 0; ?>
-                        <div class="metric-row">
-                            <span><?= clean($zName) ?></span>
-                            <strong><?= number_format($v['nrw'], 2) ?> (<?= $pct ?>%)</strong>
-                        </div>
-                    <?php endforeach; ?>
-                <?php else: ?>
-                    <p class="empty">No zone breakdown available.</p>
-                <?php endif; ?>
-            </div>
-
-            <div class="report-card">
-                <h3>NRW by Source</h3>
-
-                <?php if (!empty($sourceBreakdown)): ?>
-                    <?php foreach (array_slice($sourceBreakdown, 0, 10, true) as $sName => $v): ?>
-                        <?php $pct = $v['pumped'] > 0 ? round(($v['nrw'] / $v['pumped']) * 100, 2) : 0; ?>
-                        <div class="metric-row">
-                            <span><?= clean($sName) ?></span>
-                            <strong><?= number_format($v['nrw'], 2) ?> (<?= $pct ?>%)</strong>
-                        </div>
-                    <?php endforeach; ?>
-                <?php else: ?>
-                    <p class="empty">No source breakdown available.</p>
-                <?php endif; ?>
-            </div>
-        </div>
-
-        <div class="report-card">
-            <h3>NRW Risk Flags</h3>
-            <div class="risk-list">
-                <?php foreach($riskFlags as $risk): ?>
-                    <div class="risk-item"><?= clean($risk) ?></div>
-                <?php endforeach; ?>
-            </div>
-        </div>
-
-        <div class="report-card">
-            <h3>Detailed Production & NRW Register</h3>
-
-            <table id="productionTable" class="display">
+        <div class="table-wrap">
+            <table id="productionTable" class="display nowrap">
                 <thead>
                     <tr>
-                        <th>Date</th>
-                        <th>Source</th>
+                        <th>Meter Serial</th>
+                        <th>Customer</th>
                         <th>Zone</th>
-                        <th>Pumped Volume</th>
-                        <th>Billed Consumption</th>
-                        <th>NRW Volume</th>
-                        <th>NRW %</th>
-                        <th>Billing Efficiency %</th>
-                        <th>Revenue</th>
+                        <th>Customer Type</th>
                         <th>Status</th>
+                        <th>Entries</th>
+                        <th>Produced</th>
+                        <th>Billed</th>
+                        <th>NRW</th>
+                        <th>NRW %</th>
+                        <th>Revenue Water %</th>
+                        <th>Last Entry</th>
                     </tr>
                 </thead>
+
                 <tbody>
-                    <?php foreach ($reportRows as $r): ?>
+                    <?php foreach($rows as $r): ?>
                         <tr>
-                            <td><?= clean($r['date']) ?></td>
-                            <td><?= clean($r['source']) ?></td>
-                            <td><?= clean($r['zone']) ?></td>
-                            <td><?= number_format($r['pumped'], 2) ?></td>
-                            <td><?= number_format($r['billed'], 2) ?></td>
-                            <td><?= number_format($r['nrw_volume'], 2) ?></td>
-                            <td><?= number_format($r['nrw_percent'], 2) ?>%</td>
-                            <td><?= number_format($r['efficiency'], 2) ?>%</td>
-                            <td><?= money($r['revenue']) ?></td>
-                            <td><?= clean($r['status']) ?></td>
+                            <td><?= clean($r['serial_number']) ?></td>
+                            <td><?= clean($r['customer_name'] ?: 'N/A') ?></td>
+                            <td><?= clean($r['zone_name'] ?: 'Unassigned') ?></td>
+                            <td><?= clean($r['customer_type'] ?: 'Unknown') ?></td>
+                            <td><?= clean($r['meter_status'] ?: 'N/A') ?></td>
+                            <td><?= number_format((int)$r['entry_count']) ?></td>
+                            <td><?= number_format((float)$r['produced_volume'], 2) ?> m³</td>
+                            <td><?= number_format((float)$r['billed_volume'], 2) ?> m³</td>
+                            <td><?= number_format((float)$r['nrw_volume'], 2) ?> m³</td>
+                            <td><?= number_format((float)$r['nrw_percent'], 2) ?>%</td>
+                            <td><?= number_format((float)$r['revenue_water_percent'], 2) ?>%</td>
+                            <td><?= clean($r['last_pumped_date'] ?: 'N/A') ?></td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
             </table>
-
         </div>
-
     </div>
 
 </div>
 
 <style>
+:root{
+    --primary:#0a2a43;
+    --primary-soft:#123d5d;
+    --border:#dbe3ee;
+    --muted:#64748b;
+    --text:#334155;
+    --bg:#f4f7fb;
+    --white:#ffffff;
+}
+
+*{
+    box-sizing:border-box;
+}
+
 .page-content{
     margin-left:260px;
     margin-top:75px;
     margin-bottom:60px;
-    padding:20px;
-    background:#f4f7fb;
+    padding:24px;
+    background:var(--bg);
     min-height:calc(100vh - 135px);
-    font-family:Arial, sans-serif;
-}
-
-.module-header,
-.filter-card,
-.kpi-card,
-.report-card,
-.report-title{
-    background:#fff;
-    border:1px solid #e5e7eb;
-    border-radius:10px;
-    box-shadow:0 2px 6px rgba(0,0,0,0.04);
+    font-family:'Segoe UI', Tahoma, sans-serif;
+    color:var(--text);
 }
 
 .module-header{
+    background:var(--white);
+    border-radius:8px;
     padding:18px 20px;
-    margin-bottom:18px;
-    border-left:4px solid #0a2a43;
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    gap:14px;
+    margin-bottom:16px;
+    border:1px solid var(--border);
+    border-left:5px solid var(--primary);
 }
 
 .module-header h2{
     margin:0;
-    color:#0a2a43;
-    font-size:20px;
+    font-size:22px;
+    line-height:1.2;
+    color:var(--primary);
 }
 
 .module-header p{
     margin:6px 0 0;
-    color:#64748b;
+    color:var(--muted);
     font-size:14px;
+    line-height:1.5;
 }
 
-.header-actions{
+.filter-card{
+    background:var(--white);
+    border-radius:8px;
+    padding:16px;
+    margin-bottom:16px;
+    display:grid;
+    grid-template-columns:repeat(6, minmax(145px, 1fr));
+    gap:12px;
+    align-items:end;
+    border:1px solid var(--border);
+}
+
+.filter-field{
+    min-width:0;
+}
+
+.filter-field label{
+    display:block;
+    margin-bottom:5px;
+    font-size:13px;
+    font-weight:600;
+    color:#475569;
+}
+
+.filter-field input,
+.filter-field select{
+    width:100%;
+    min-height:40px;
+    padding:9px 10px;
+    border-radius:7px;
+    border:1px solid var(--border);
+    background:#f8fafc;
+    color:var(--text);
+    font-size:13px;
+    outline:none;
+}
+
+.filter-field input:focus,
+.filter-field select:focus,
+.dt-search input:focus,
+.dt-length select:focus{
+    border-color:var(--primary);
+    box-shadow:0 0 0 2px rgba(10,42,67,0.12);
+}
+
+.search-box{
+    grid-column:span 2;
+}
+
+.filter-actions{
     display:flex;
+    flex-direction:row;
     gap:8px;
     align-items:center;
+    justify-content:flex-start;
+    white-space:nowrap;
 }
 
-.print-btn,
 .download-btn,
+.print-btn,
 .filter-card button,
 .clear-btn{
-    background:#0a2a43;
-    color:#fff;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    min-height:40px;
     border:none;
-    padding:9px 13px;
-    border-radius:6px;
+    background:var(--primary);
+    color:#fff;
+    padding:10px 14px;
+    border-radius:7px;
     cursor:pointer;
     font-size:13px;
+    font-weight:600;
     text-decoration:none;
+    line-height:1;
+    white-space:nowrap;
+}
+
+.download-btn:hover,
+.print-btn:hover,
+.filter-card button:hover{
+    background:var(--primary-soft);
 }
 
 .clear-btn{
     background:#64748b;
+}
+
+.clear-btn:hover{
+    background:#475569;
+}
+
+.table-panel{
+    overflow:visible;
+}
+
+.table-toolbar{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+    margin-bottom:12px;
+    flex-wrap:nowrap;
+    position:relative;
+    z-index:20;
+}
+
+.table-count{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    color:#475569;
+    font-size:14px;
+    min-width:0;
+    white-space:nowrap;
+}
+
+.table-count strong{
+    color:var(--primary);
+    font-size:18px;
+}
+
+.table-actions{
+    display:flex;
+    flex-direction:row;
+    gap:8px;
+    align-items:center;
+    justify-content:flex-end;
+    flex-wrap:nowrap;
+    white-space:nowrap;
 }
 
 .dropdown{
@@ -616,191 +503,289 @@ if (count($reportRows) === 0) {
     display:none;
     position:absolute;
     right:0;
+    top:calc(100% + 6px);
     background:#fff;
-    min-width:140px;
-    border:1px solid #e5e7eb;
+    min-width:150px;
     border-radius:8px;
-    box-shadow:0 6px 18px rgba(0,0,0,0.12);
-    z-index:20;
+    overflow:hidden;
+    border:1px solid var(--border);
+    box-shadow:0 12px 22px rgba(0,0,0,0.14);
+    z-index:9999;
 }
 
 .dropdown-content a{
     display:block;
-    padding:10px 12px;
+    padding:11px 13px;
+    color:#334155;
     text-decoration:none;
-    color:#334155;
     font-size:13px;
-}
-
-.dropdown:hover .dropdown-content{
-    display:block;
-}
-
-.filter-card{
-    padding:14px;
-    margin-bottom:18px;
-    display:flex;
-    align-items:end;
-    gap:10px;
-    flex-wrap:wrap;
-}
-
-.filter-card label{
-    display:block;
-    font-size:13px;
-    font-weight:600;
-    color:#334155;
-    margin-bottom:5px;
-}
-
-.filter-card input,
-.filter-card select{
-    padding:9px;
-    border:1px solid #d1d5db;
-    border-radius:6px;
-    min-width:150px;
-}
-
-.search-box input{
-    min-width:260px;
-}
-
-.filter-warning{
     background:#fff;
-    border-left:4px solid #0a2a43;
-    color:#334155;
-    padding:12px 15px;
-    border-radius:8px;
-    margin-bottom:18px;
-    font-size:14px;
 }
 
-.report-title{
-    padding:14px 18px;
-    margin-bottom:18px;
-}
-
-.report-title h3{
-    margin:0;
-    color:#0a2a43;
-}
-
-.report-title p{
-    margin:5px 0 0;
-    color:#64748b;
-    font-size:13px;
-}
-
-.kpi-grid{
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
-    gap:12px;
-    margin-bottom:18px;
-}
-
-.kpi-card{
-    padding:15px;
-}
-
-.kpi-card span{
-    display:block;
-    color:#64748b;
-    font-size:13px;
-    margin-bottom:8px;
-}
-
-.kpi-card strong{
-    display:block;
-    color:#0a2a43;
-    font-size:22px;
-    margin-bottom:5px;
-}
-
-.kpi-card small{
-    color:#64748b;
-}
-
-.report-grid{
-    display:grid;
-    gap:18px;
-    margin-bottom:18px;
-}
-
-.report-grid.two{
-    grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
-}
-
-.report-card{
-    padding:18px;
-    margin-bottom:18px;
-    overflow-x:auto;
-}
-
-.report-card h3{
-    margin:0 0 14px;
-    color:#0a2a43;
-    font-size:17px;
-}
-
-.metric-row{
-    display:flex;
-    justify-content:space-between;
-    gap:12px;
-    padding:9px 0;
-    border-bottom:1px solid #e5e7eb;
-    font-size:14px;
-}
-
-.metric-row span{
-    color:#475569;
-}
-
-.metric-row strong{
-    color:#0a2a43;
-}
-
-.risk-list{
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
-    gap:10px;
-}
-
-.risk-item{
+.dropdown-content a:hover{
     background:#f8fafc;
-    border-left:4px solid #0a2a43;
+}
+
+.dropdown:hover .dropdown-content,
+.dropdown:focus-within .dropdown-content{
+    display:block;
+}
+
+.table-wrap{
+    width:100%;
+    overflow-x:auto;
+    background:#fff;
+    border:1px solid var(--border);
     border-radius:8px;
     padding:12px;
-    color:#334155;
-    font-size:14px;
 }
 
-.empty{
-    color:#64748b;
-    font-size:14px;
-}
-
-table{
+.dt-container,
+.dataTables_wrapper{
     width:100%;
-    border-collapse:collapse;
-    font-size:14px;
+    margin:0;
 }
 
-th{
-    background:#f8fafc;
-    color:#334155;
-    text-align:left;
-    padding:10px;
-    border-bottom:1px solid #e5e7eb;
+.dt-container .dt-layout-row:first-child{
+    display:flex !important;
+    flex-direction:row !important;
+    justify-content:space-between !important;
+    align-items:center !important;
+    gap:16px !important;
+    flex-wrap:nowrap !important;
+    margin-bottom:12px !important;
+    overflow-x:auto;
+    padding-bottom:2px;
 }
 
-td{
-    padding:10px;
-    border-bottom:1px solid #e5e7eb;
-    color:#334155;
+.dt-container .dt-layout-cell{
+    min-width:0;
 }
 
-.dt-button{
+.dt-container .dt-layout-cell.dt-layout-start{
+    flex:0 0 auto;
+}
+
+.dt-container .dt-layout-cell.dt-layout-end{
+    flex:0 0 auto;
+    margin-left:auto;
+}
+
+.dt-length,
+.dt-search{
+    display:flex !important;
+    flex-direction:row !important;
+    align-items:center !important;
+    gap:8px !important;
+    margin:0 !important;
+    white-space:nowrap !important;
+}
+
+.dt-length label,
+.dt-search label{
+    display:flex !important;
+    flex-direction:row !important;
+    align-items:center !important;
+    gap:8px !important;
+    margin:0 !important;
+    color:#475569 !important;
+    font-size:13px !important;
+    white-space:nowrap !important;
+}
+
+.dt-length select{
+    width:78px !important;
+    min-width:78px !important;
+    height:36px !important;
+    padding:6px 8px !important;
+    border:1px solid var(--border) !important;
+    border-radius:7px !important;
+    background:#fff !important;
+    color:var(--text) !important;
+}
+
+.dt-search input{
+    width:230px !important;
+    min-width:230px !important;
+    height:36px !important;
+    padding:6px 9px !important;
+    border:1px solid var(--border) !important;
+    border-radius:7px !important;
+    background:#fff !important;
+    color:var(--text) !important;
+}
+
+.dt-info{
+    color:var(--muted);
+    font-size:13px;
+    padding-top:12px;
+}
+
+.dt-paging{
+    padding-top:12px;
+}
+
+.dt-paging button{
+    border-radius:6px !important;
+    border:1px solid var(--border) !important;
+    background:#fff !important;
+    color:var(--text) !important;
+    padding:6px 10px !important;
+    margin:0 2px !important;
+}
+
+.dt-paging button.current{
+    background:var(--primary) !important;
+    color:#fff !important;
+    border-color:var(--primary) !important;
+}
+
+.dt-buttons{
     display:none !important;
+}
+
+#productionTable{
+    width:100% !important;
+    border-collapse:separate;
+    border-spacing:0;
+    font-size:14px;
+    background:#fff;
+}
+
+#productionTable thead th,
+table.dataTable.display > thead > tr > th{
+    background:var(--primary) !important;
+    color:#fff !important;
+    font-size:13px;
+    font-weight:700;
+    padding:12px 12px !important;
+    border-bottom:0 !important;
+    text-align:left;
+    vertical-align:middle;
+    white-space:nowrap;
+}
+
+#productionTable thead th:first-child{
+    border-top-left-radius:6px;
+}
+
+#productionTable thead th:last-child{
+    border-top-right-radius:6px;
+}
+
+#productionTable thead th.dt-orderable-asc span.dt-column-order:before,
+#productionTable thead th.dt-orderable-desc span.dt-column-order:after,
+#productionTable thead th.dt-ordering-asc span.dt-column-order:before,
+#productionTable thead th.dt-ordering-desc span.dt-column-order:after{
+    color:#fff !important;
+    opacity:0.85 !important;
+}
+
+#productionTable tbody td,
+table.dataTable.display > tbody > tr > td{
+    padding:12px 12px !important;
+    border-bottom:1px solid #edf2f7 !important;
+    color:#475569 !important;
+    vertical-align:middle;
+    white-space:nowrap;
+}
+
+#productionTable tbody tr:nth-child(even){
+    background:#f8fafc;
+}
+
+#productionTable tbody tr:hover{
+    background:#eef6fb !important;
+}
+
+@media(max-width:1200px){
+    .filter-card{
+        grid-template-columns:repeat(3, minmax(160px, 1fr));
+    }
+
+    .search-box{
+        grid-column:span 2;
+    }
+}
+
+@media(max-width:992px){
+    .page-content{
+        margin-left:0;
+        padding:15px;
+    }
+
+    .filter-card{
+        grid-template-columns:1fr;
+    }
+
+    .search-box{
+        grid-column:auto;
+    }
+
+    .filter-actions{
+        flex-direction:row;
+        align-items:center;
+    }
+
+    .filter-card button,
+    .clear-btn{
+        flex:1 1 0;
+    }
+
+    .table-toolbar{
+        flex-direction:column;
+        align-items:stretch;
+        gap:10px;
+    }
+
+    .table-count{
+        justify-content:space-between;
+    }
+
+    .table-actions{
+        width:100%;
+        flex-direction:row;
+        align-items:center;
+        justify-content:flex-start;
+    }
+
+    .dropdown,
+    .download-btn,
+    .print-btn{
+        flex:1 1 0;
+    }
+
+    .download-btn,
+    .print-btn{
+        width:100%;
+    }
+
+    .dropdown-content{
+        left:0;
+        right:auto;
+        width:100%;
+    }
+
+    .dt-container .dt-layout-row:first-child{
+        flex-direction:row !important;
+        align-items:center !important;
+        justify-content:space-between !important;
+        flex-wrap:nowrap !important;
+    }
+
+    .dt-length,
+    .dt-search,
+    .dt-length label,
+    .dt-search label{
+        width:auto !important;
+        flex-wrap:nowrap !important;
+        white-space:nowrap !important;
+    }
+
+    .dt-search input{
+        width:180px !important;
+        min-width:180px !important;
+    }
 }
 </style>
 
@@ -813,22 +798,66 @@ td{
 <script src="https://cdn.datatables.net/buttons/3.0.2/js/buttons.html5.min.js"></script>
 
 <script>
-const hasFilter = <?= $hasFilter ? 'true' : 'false' ?>;
 let productionTable;
+
+function getDynamicTitle(){
+    let title = 'WOWASCO Production Report';
+
+    const zone = $('select[name="zone"]').val();
+    const customerType = $('select[name="customer_type"]').val();
+    const status = $('select[name="status"]').val();
+
+    if(zone) title += ' - Zone ' + zone;
+    if(customerType) title += ' - Customer Type ' + customerType;
+    if(status) title += ' - Status ' + status;
+
+    return title;
+}
+
+function getFilterSummaryLines(){
+    const from = $('input[name="from"]').val() || 'Any';
+    const to = $('input[name="to"]').val() || 'Any';
+    const zone = $('select[name="zone"]').val() || 'All';
+    const customerType = $('select[name="customer_type"]').val() || 'All';
+    const status = $('select[name="status"]').val() || 'All';
+    const search = $('input[name="search"]').val() || 'None';
+    const tableSearch = productionTable ? (productionTable.search() || 'None') : 'None';
+    const filteredCount = productionTable ? productionTable.rows({ search:'applied' }).count() : <?= (int)$filteredRecords ?>;
+
+    return [
+        'Generated: ' + new Date().toLocaleString(),
+        'Filtered Records: ' + filteredCount,
+        'Period: ' + from + ' to ' + to,
+        'Zone: ' + zone + ' | Customer Type: ' + customerType + ' | Status: ' + status,
+        'Search: ' + search + ' | Table Search: ' + tableSearch
+    ];
+}
+
+function getFilterSummary(){
+    return getFilterSummaryLines().join('\n');
+}
+
+function getExportFilename(){
+    return getDynamicTitle()
+        .replace(/[^a-z0-9]+/gi, '_')
+        .replace(/^_+|_+$/g, '');
+}
 
 $(document).ready(function(){
     productionTable = $('#productionTable').DataTable({
         pageLength: 10,
-        lengthMenu: [10, 25, 50, 100],
+        lengthMenu: [10,25,50,100],
         ordering: true,
         searching: true,
         paging: true,
+        autoWidth: false,
         dom: 'Blfrtip',
         buttons: [
             {
                 extend: 'excelHtml5',
-                title: 'WOWASCO Production and NRW Report',
-                filename: 'WOWASCO_Production_NRW_Report',
+                title: getDynamicTitle,
+                filename: getExportFilename,
+                messageTop: getFilterSummary,
                 exportOptions: {
                     columns: ':visible',
                     modifier: {
@@ -840,8 +869,9 @@ $(document).ready(function(){
             },
             {
                 extend: 'pdfHtml5',
-                title: 'WOWASCO Production and NRW Report',
-                filename: 'WOWASCO_Production_NRW_Report',
+                title: getDynamicTitle,
+                filename: getExportFilename,
+                messageTop: getFilterSummary,
                 orientation: 'landscape',
                 pageSize: 'A4',
                 exportOptions: {
@@ -850,6 +880,24 @@ $(document).ready(function(){
                         search: 'applied',
                         order: 'applied',
                         page: 'all'
+                    }
+                },
+                customize: function(doc){
+                    doc.styles.title = {
+                        fontSize: 14,
+                        bold: true,
+                        alignment: 'left',
+                        margin: [0, 0, 0, 8]
+                    };
+
+                    if(doc.content[1] && doc.content[1].text){
+                        doc.content[1].fontSize = 9;
+                        doc.content[1].margin = [0, 0, 0, 10];
+                    }
+
+                    const tableNode = doc.content.find(item => item.table);
+                    if(tableNode){
+                        tableNode.layout = 'lightHorizontalLines';
                     }
                 }
             }
@@ -864,12 +912,8 @@ $(document).ready(function(){
 });
 
 function triggerExport(type){
-    if(!hasFilter){
-        alert("Please apply at least one filter before downloading.");
-        return;
-    }
-
-    if(!confirm("Proceed using the currently filtered data only?")){
+    if(!productionTable){
+        alert('The report table is still loading. Please try again.');
         return;
     }
 
@@ -882,128 +926,90 @@ function triggerExport(type){
     }
 }
 
-function printFilteredReport(){
-    if(!hasFilter){
-        alert("Please apply at least one filter before printing.");
-        return;
-    }
+function escapeHtml(value){
+    return $('<div>').text(value ?? '').html();
+}
 
-    if(!confirm("Print report using the currently filtered data only?")){
+function printFilteredReport(){
+    if(!productionTable){
+        alert('The report table is still loading. Please try again.');
         return;
     }
 
     let headers = [];
+
     $('#productionTable thead th').each(function(){
         headers.push($(this).text().trim());
     });
 
     let rows = productionTable.rows({
-        search: 'applied',
-        order: 'applied',
-        page: 'all'
+        search:'applied',
+        order:'applied',
+        page:'all'
     }).data().toArray();
+
+    let headerHtml = `
+        <div class="print-header">
+            <h2>${escapeHtml(getDynamicTitle())}</h2>
+            ${getFilterSummaryLines().map(line => `<p>${escapeHtml(line)}</p>`).join('')}
+        </div>
+    `;
 
     let tableHtml = `
         <table>
             <thead>
-                <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+                <tr>${headers.map(h => `<th>${escapeHtml(h)}</th>`).join('')}</tr>
             </thead>
             <tbody>
                 ${
                     rows.length > 0
                     ? rows.map(row => `
                         <tr>
-                            ${row.map(cell => `<td>${$('<div>').html(cell).text()}</td>`).join('')}
+                            ${row.map(cell => `<td>${escapeHtml($('<div>').html(cell).text())}</td>`).join('')}
                         </tr>
                     `).join('')
-                    : `<tr><td colspan="${headers.length}">No records found.</td></tr>`
+                    : `<tr><td colspan="${headers.length}">No filtered records found.</td></tr>`
                 }
             </tbody>
         </table>
     `;
 
-    let summaryHtml = document.querySelector('.report-title').outerHTML
-        + document.querySelector('.kpi-grid').outerHTML
-        + document.querySelector('.risk-list').outerHTML;
-
-    let printWindow = window.open('', '_blank', 'width=1200,height=800');
+    let printWindow = window.open('', '', 'width=1200,height=800');
 
     printWindow.document.write(`
         <!DOCTYPE html>
         <html>
         <head>
-            <title>WOWASCO Production and NRW Report</title>
+            <title>${escapeHtml(getDynamicTitle())}</title>
             <style>
                 body{
-                    font-family:Arial, sans-serif;
+                    font-family:Arial,sans-serif;
                     padding:20px;
                     color:#1f2937;
                 }
 
-                h3{
-                    color:#0a2a43;
-                    margin-bottom:5px;
-                }
-
-                .report-title{
+                .print-header{
                     border-bottom:2px solid #0a2a43;
-                    padding-bottom:10px;
                     margin-bottom:15px;
+                    padding-bottom:10px;
                 }
 
-                .report-title p{
+                .print-header h2{
+                    margin:0 0 6px;
+                    color:#0a2a43;
+                    font-size:18px;
+                }
+
+                .print-header p{
+                    margin:3px 0;
                     font-size:12px;
                     color:#475569;
-                    margin:4px 0;
-                }
-
-                .kpi-grid{
-                    display:grid;
-                    grid-template-columns:repeat(4,1fr);
-                    gap:8px;
-                    margin-bottom:16px;
-                }
-
-                .kpi-card{
-                    border:1px solid #d1d5db;
-                    padding:8px;
-                    border-radius:6px;
-                }
-
-                .kpi-card span{
-                    display:block;
-                    font-size:11px;
-                    color:#64748b;
-                }
-
-                .kpi-card strong{
-                    display:block;
-                    font-size:16px;
-                    color:#0a2a43;
-                }
-
-                .kpi-card small{
-                    font-size:10px;
-                    color:#64748b;
-                }
-
-                .risk-list{
-                    display:block;
-                    margin-bottom:15px;
-                }
-
-                .risk-item{
-                    border-left:3px solid #0a2a43;
-                    padding:6px 8px;
-                    margin-bottom:5px;
-                    background:#f8fafc;
-                    font-size:12px;
                 }
 
                 table{
                     width:100%;
                     border-collapse:collapse;
-                    font-size:11px;
+                    font-size:10px;
                 }
 
                 th,td{
@@ -1014,29 +1020,26 @@ function printFilteredReport(){
                 }
 
                 th{
-                    background:#f1f5f9;
-                    color:#0a2a43;
+                    background:#0a2a43;
+                    color:#fff;
                 }
 
-                @media print{
-                    body{
-                        padding:10px;
-                    }
+                tbody tr:nth-child(even){
+                    background:#f8fafc;
                 }
             </style>
         </head>
         <body>
-            ${summaryHtml}
-            <h3>Detailed Production and NRW Register</h3>
+            ${headerHtml}
             ${tableHtml}
         </body>
         </html>
     `);
 
     printWindow.document.close();
+    printWindow.focus();
 
     printWindow.onload = function(){
-        printWindow.focus();
         printWindow.print();
     };
 }
