@@ -286,15 +286,85 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lookup_customer'])) {
 
 /* ================= WATER RATIONING ================= */
 
-$rationing = false;
+$rationingRows = [];
 
-if (tableExists($conn, 'water_rationing_schedule')) {
-    $rationing = $conn->query("
-        SELECT *
+if (
+    tableExists($conn, 'zone_supply_schedule') &&
+    tableExists($conn, 'zones') &&
+    tableExists($conn, 'water_sources')
+) {
+    $scheduleResult = $conn->query("
+        SELECT
+            'Supply Schedule' AS notice_type,
+            z.zone_name AS zone,
+            zss.supply_day AS rationing_day,
+            zss.start_time,
+            zss.end_time,
+            ws.source_name,
+            COALESCE(zss.notes, '') AS notice,
+            zss.status,
+            NULL AS schedule_date
+        FROM zone_supply_schedule zss
+        LEFT JOIN zones z ON z.id = zss.zone_id
+        LEFT JOIN water_sources ws ON ws.id = zss.source_id
+        WHERE zss.status='Active'
+        ORDER BY z.zone_name ASC, zss.supply_day ASC, zss.start_time ASC
+    ");
+
+    if ($scheduleResult) {
+        while ($row = $scheduleResult->fetch_assoc()) {
+            $rationingRows[] = $row;
+        }
+    }
+}
+
+if (tableExists($conn, 'zone_maintenance') && tableExists($conn, 'zones')) {
+    $maintenanceResult = $conn->query("
+        SELECT
+            'Scheduled Maintenance' AS notice_type,
+            z.zone_name AS zone,
+            DAYNAME(zm.maintenance_date) AS rationing_day,
+            '00:00:00' AS start_time,
+            '23:59:00' AS end_time,
+            '' AS source_name,
+            TRIM(CONCAT(zm.issue_title, '. ', COALESCE(zm.issue_description, ''))) AS notice,
+            zm.status,
+            zm.maintenance_date AS schedule_date
+        FROM zone_maintenance zm
+        LEFT JOIN zones z ON z.id = zm.zone_id
+        WHERE zm.status IN ('Open','In Progress')
+        ORDER BY zm.maintenance_date ASC, z.zone_name ASC
+    ");
+
+    if ($maintenanceResult) {
+        while ($row = $maintenanceResult->fetch_assoc()) {
+            $rationingRows[] = $row;
+        }
+    }
+}
+
+if (empty($rationingRows) && tableExists($conn, 'water_rationing_schedule')) {
+    $legacyRationing = $conn->query("
+        SELECT
+            'Published Notice' AS notice_type,
+            zone,
+            rationing_day,
+            start_time,
+            end_time,
+            '' AS source_name,
+            notice,
+            status,
+            NULL AS schedule_date
         FROM water_rationing_schedule
         WHERE status='Active'
         ORDER BY zone ASC, rationing_day ASC
     ");
+
+    if ($legacyRationing) {
+        while ($row = $legacyRationing->fetch_assoc()) {
+            $rationingRows[] = $row;
+        }
+    }
 }
 
 /* ================= COUNTS ================= */
@@ -311,9 +381,7 @@ $totalComplaints = tableExists($conn, 'customer_complaints')
     ? (int)$conn->query("SELECT COUNT(*) AS c FROM customer_complaints")->fetch_assoc()['c']
     : 0;
 
-$activeRationing = tableExists($conn, 'water_rationing_schedule')
-    ? (int)$conn->query("SELECT COUNT(*) AS c FROM water_rationing_schedule WHERE status='Active'")->fetch_assoc()['c']
-    : 0;
+$activeRationing = count($rationingRows);
 
 /* ================= ACTIVE TAB ================= */
 
@@ -344,34 +412,6 @@ if (isset($_POST['submit_enquiry'])) {
     </div>
 
     <?= $message ?>
-
-    <div class="kpis">
-
-        <div class="kpi blue">
-            <h3><?= number_format($totalApplications) ?></h3>
-            <p>Meter Applications</p>
-            <small>Customer connection requests</small>
-        </div>
-
-        <div class="kpi">
-            <h3><?= number_format($totalEnquiries) ?></h3>
-            <p>Customer Enquiries</p>
-            <small>General support requests</small>
-        </div>
-
-        <div class="kpi red">
-            <h3><?= number_format($totalComplaints) ?></h3>
-            <p>Customer Complaints</p>
-            <small>Service issue reports</small>
-        </div>
-
-        <div class="kpi yellow">
-            <h3><?= number_format($activeRationing) ?></h3>
-            <p>Active Rationing Notices</p>
-            <small>Published customer advisories</small>
-        </div>
-
-    </div>
 
     <div class="filters portal-tabs">
 
@@ -615,30 +655,37 @@ if (isset($_POST['submit_enquiry'])) {
                     <table>
                         <thead>
                             <tr>
+                                <th>Type</th>
                                 <th>Zone</th>
                                 <th>Day</th>
-                                <th>Start Time</th>
-                                <th>End Time</th>
+                                <th>Time</th>
+                                <th>Source</th>
                                 <th>Notice</th>
                                 <th>Status</th>
                             </tr>
                         </thead>
 
                         <tbody>
-                            <?php if ($rationing && $rationing->num_rows > 0): ?>
-                                <?php while ($r = $rationing->fetch_assoc()): ?>
+                            <?php if (count($rationingRows) > 0): ?>
+                                <?php foreach ($rationingRows as $r): ?>
                                     <tr>
+                                        <td><?= clean($r['notice_type']) ?></td>
                                         <td><?= clean($r['zone']) ?></td>
-                                        <td><?= clean($r['rationing_day']) ?></td>
-                                        <td><?= clean($r['start_time']) ?></td>
-                                        <td><?= clean($r['end_time']) ?></td>
+                                        <td>
+                                            <?= clean($r['rationing_day']) ?>
+                                            <?php if (!empty($r['schedule_date'])): ?>
+                                                <br><small><?= clean($r['schedule_date']) ?></small>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td><?= clean($r['start_time']) ?> - <?= clean($r['end_time']) ?></td>
+                                        <td><?= clean($r['source_name'] ?: 'N/A') ?></td>
                                         <td><?= clean($r['notice']) ?></td>
                                         <td><span class="badge good"><?= clean($r['status']) ?></span></td>
                                     </tr>
-                                <?php endwhile; ?>
+                                <?php endforeach; ?>
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="6">No active water rationing schedule available.</td>
+                                    <td colspan="7">No active water rationing schedule available from Zone Management.</td>
                                 </tr>
                             <?php endif; ?>
                         </tbody>
@@ -673,83 +720,73 @@ if (isset($_POST['submit_enquiry'])) {
 
                 <?php if (isset($_POST['lookup_customer'])): ?>
 
-                    <h3 class="section-title">Meter Information</h3>
+                    <?php if (count($customerMeters) > 0): ?>
+                        <div class="lookup-results">
+                            <?php foreach ($customerMeters as $m): ?>
+                                <div class="lookup-card">
+                                    <h4>Meter Details</h4>
 
-                    <div class="table-wrapper">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Serial Number</th>
-                                    <th>Customer</th>
-                                    <th>National ID</th>
-                                    <th>Phone</th>
-                                    <th>Alternative Phone</th>
-                                    <th>Zone</th>
-                                    <th>Model</th>
-                                    <th>Status</th>
-                                    <th>Installation Date</th>
-                                </tr>
-                            </thead>
+                                    <div class="detail-grid">
+                                        <div>
+                                            <span>Serial Number</span>
+                                            <strong><?= clean($m['serial_number'] ?? 'N/A') ?></strong>
+                                        </div>
 
-                            <tbody>
-                                <?php if (count($customerMeters) > 0): ?>
-                                    <?php foreach ($customerMeters as $m): ?>
-                                        <tr>
-                                            <td><strong><?= clean($m['serial_number'] ?? '') ?></strong></td>
-                                            <td><?= clean($m['customer_name'] ?? '') ?></td>
-                                            <td><?= clean($m['national_id'] ?? '') ?></td>
-                                            <td><?= clean($m['customer_phone'] ?? '') ?></td>
-                                            <td><?= clean($m['alternative_phone'] ?? '') ?></td>
-                                            <td><?= clean($m['zone'] ?? '') ?></td>
-                                            <td><?= clean($m['model'] ?? '') ?></td>
-                                            <td><span class="badge good"><?= clean($m['status'] ?? '') ?></span></td>
-                                            <td><?= clean($m['installation_date'] ?? '') ?></td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <tr>
-                                        <td colspan="9">No meter information found for the entered meter serial or national ID.</td>
-                                    </tr>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
+                                        <div>
+                                            <span>Customer</span>
+                                            <strong><?= clean($m['customer_name'] ?? 'N/A') ?></strong>
+                                        </div>
 
-                    <h3 class="section-title" style="margin-top:20px;">Billing Information</h3>
+                                        <div>
+                                            <span>Zone</span>
+                                            <strong><?= clean($m['zone'] ?? 'N/A') ?></strong>
+                                        </div>
 
-                    <div class="table-wrapper">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Bill No</th>
-                                    <th>Meter Serial</th>
-                                    <th>Bill Month</th>
-                                    <th>Amount</th>
-                                    <th>Status</th>
-                                    <th>Date Created</th>
-                                </tr>
-                            </thead>
+                                        <div>
+                                            <span>Status</span>
+                                            <strong><?= clean($m['status'] ?? 'N/A') ?></strong>
+                                        </div>
 
-                            <tbody>
+                                        <div>
+                                            <span>Model</span>
+                                            <strong><?= clean($m['model'] ?? 'N/A') ?></strong>
+                                        </div>
+
+                                        <div>
+                                            <span>Installation Date</span>
+                                            <strong><?= clean($m['installation_date'] ?? 'N/A') ?></strong>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+
+                            <div class="lookup-card">
+                                <h4>Billing Details</h4>
+
                                 <?php if (count($customerBills) > 0): ?>
-                                    <?php foreach ($customerBills as $b): ?>
-                                        <tr>
-                                            <td><?= clean($b['id'] ?? '') ?></td>
-                                            <td><?= clean($b['serial_number'] ?? '') ?></td>
-                                            <td><?= clean($b['bill_month'] ?? '') ?></td>
-                                            <td><strong>KSh <?= number_format((float)($b['amount'] ?? 0), 2) ?></strong></td>
-                                            <td><span class="badge warning"><?= clean($b['status'] ?? '') ?></span></td>
-                                            <td><?= clean($b['created_at'] ?? '') ?></td>
-                                        </tr>
-                                    <?php endforeach; ?>
+                                    <div class="bill-list">
+                                        <?php foreach ($customerBills as $b): ?>
+                                            <div class="bill-row">
+                                                <div>
+                                                    <strong><?= clean($b['bill_month'] ?? 'Billing Record') ?></strong>
+                                                    <span><?= clean($b['serial_number'] ?? '') ?></span>
+                                                </div>
+
+                                                <div>
+                                                    <strong>KSh <?= number_format((float)($b['amount'] ?? 0), 2) ?></strong>
+                                                    <span><?= clean($b['status'] ?? 'N/A') ?></span>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
                                 <?php else: ?>
-                                    <tr>
-                                        <td colspan="6">No billing information found for the entered meter serial or national ID.</td>
-                                    </tr>
+                                    <div class="empty-result">No billing information found for this meter.</div>
                                 <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
+                            </div>
+                        </div>
+                    <?php else: ?>
+                        <div class="empty-result">No meter or billing information found for the entered meter serial or national ID.</div>
+                    <?php endif; ?>
 
                 <?php endif; ?>
 
@@ -815,68 +852,6 @@ if (isset($_POST['submit_enquiry'])) {
 
         </div>
 
-        <div class="panel">
-
-            <h3 class="section-title">Customer Service Alerts</h3>
-
-            <?php if($totalComplaints > 0): ?>
-                <div class="alert-card red">
-                    <strong><?= number_format($totalComplaints) ?> complaint(s) recorded.</strong><br>
-                    Review service issues and prioritize critical complaints.
-                </div>
-            <?php endif; ?>
-
-            <?php if($totalApplications > 0): ?>
-                <div class="alert-card blue">
-                    <strong><?= number_format($totalApplications) ?> meter application(s) recorded.</strong><br>
-                    Ensure pending applications are reviewed and assigned.
-                </div>
-            <?php endif; ?>
-
-            <?php if($totalEnquiries > 0): ?>
-                <div class="alert-card">
-                    <strong><?= number_format($totalEnquiries) ?> enquiry request(s) recorded.</strong><br>
-                    Respond to customer enquiries within the expected service timeline.
-                </div>
-            <?php endif; ?>
-
-            <?php if($activeRationing > 0): ?>
-                <div class="alert-card">
-                    <strong><?= number_format($activeRationing) ?> active rationing notice(s).</strong><br>
-                    Customers should check the rationing tab for affected zones.
-                </div>
-            <?php endif; ?>
-
-            <?php if($totalComplaints == 0 && $totalApplications == 0 && $totalEnquiries == 0 && $activeRationing == 0): ?>
-                <div class="alert-card green">
-                    <strong>No major customer service alerts.</strong><br>
-                    Customer portal activity is currently low.
-                </div>
-            <?php endif; ?>
-
-            <div class="insight-box">
-
-                <strong>Portal Insight</strong><br><br>
-
-                This portal enables customers to submit applications, enquiries and complaints,
-                view active water rationing notices, search meter and billing details, and track requests using generated reference numbers.
-
-            </div>
-
-            <div class="insight-box">
-
-                <strong>Recommended Operational Actions</strong><br><br>
-
-                1. Review new meter applications daily.<br>
-                2. Prioritize high and critical complaints.<br>
-                3. Keep rationing schedules updated.<br>
-                4. Use reference numbers to improve follow-up.<br>
-                5. Ensure customer billing records remain accurate.
-
-            </div>
-
-        </div>
-
     </div>
 
 </div>
@@ -934,45 +909,6 @@ body{
     color:#0f172a;
 }
 
-.kpis{
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
-    gap:18px;
-}
-
-.kpi{
-    background:white;
-    border-radius:16px;
-    padding:20px;
-    border:1px solid #e2e8f0;
-    border-left:5px solid #1e7d4f;
-    box-shadow:0 4px 14px rgba(15,23,42,0.04);
-}
-
-.kpi.blue{ border-left-color:#1e3a8a; }
-.kpi.yellow{ border-left-color:#eab308; }
-.kpi.red{ border-left-color:#dc2626; }
-
-.kpi h3{
-    margin:0;
-    font-size:30px;
-    color:#0f172a;
-}
-
-.kpi p{
-    margin:8px 0 0;
-    font-size:13px;
-    color:#64748b;
-    font-weight:700;
-}
-
-.kpi small{
-    display:block;
-    margin-top:8px;
-    color:#94a3b8;
-    font-size:12px;
-}
-
 .filters{
     margin-top:24px;
     background:white;
@@ -1011,7 +947,7 @@ body{
 
 .grid{
     display:grid;
-    grid-template-columns:1fr 360px;
+    grid-template-columns:1fr;
     gap:20px;
     margin-top:24px;
 }
@@ -1166,6 +1102,78 @@ tr:hover td{
     color:#15803d;
 }
 
+.lookup-results{
+    display:grid;
+    gap:14px;
+    margin-top:18px;
+}
+
+.lookup-card{
+    background:#fff;
+    border:1px solid #e2e8f0;
+    border-radius:14px;
+    padding:16px;
+}
+
+.lookup-card h4{
+    margin:0 0 12px;
+    color:#0f172a;
+    font-size:15px;
+}
+
+.detail-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+    gap:10px;
+}
+
+.detail-grid div{
+    background:#f8fafc;
+    border:1px solid #eef2f7;
+    border-radius:10px;
+    padding:10px;
+}
+
+.detail-grid span,
+.bill-row span{
+    display:block;
+    color:#64748b;
+    font-size:12px;
+    margin-top:3px;
+}
+
+.detail-grid strong,
+.bill-row strong{
+    color:#1e293b;
+    font-size:13px;
+}
+
+.bill-list{
+    display:grid;
+    gap:8px;
+}
+
+.bill-row{
+    display:flex;
+    justify-content:space-between;
+    gap:12px;
+    align-items:center;
+    background:#f8fafc;
+    border:1px solid #eef2f7;
+    border-radius:10px;
+    padding:10px;
+}
+
+.empty-result{
+    background:#f8fafc;
+    border:1px dashed #cbd5e1;
+    border-radius:12px;
+    color:#64748b;
+    font-size:13px;
+    padding:14px;
+    margin-top:14px;
+}
+
 .alert-card{
     border-left:4px solid #facc15;
     padding:14px;
@@ -1226,6 +1234,11 @@ tr:hover td{
 
     .tab-btn{
         width:100%;
+    }
+
+    .bill-row{
+        align-items:flex-start;
+        flex-direction:column;
     }
 }
 </style>

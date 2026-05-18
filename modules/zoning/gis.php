@@ -1,275 +1,176 @@
 <?php
 require_once __DIR__ . '/../../api/db.php';
-
-/* ================= FETCH ZONES ================= */
-$zones = [];
-
-$zoneResult = $conn->query("SELECT zone_name FROM zones");
-
-while ($row = $zoneResult->fetch_assoc()) {
-    $zones[] = $row['zone_name'];
-}
-
-/* ================= FETCH METERS ================= */
-$meters = [];
-$metersByZone = [];
-
-$result = $conn->query("
-    SELECT serial_number, zone, customer_name, customer_type, status
-    FROM meters
-");
-
-while ($row = $result->fetch_assoc()) {
-    $meters[] = $row;
-}
-
-/* ================= CLEAN FUNCTION ================= */
-function clean($text)
-{
-    $text = strtolower(trim($text));
-    return preg_replace('/[^a-z0-9]/', '', $text);
-}
-
-/* ================= GROUP METERS ================= */
-$metersByZone = [];
-
-foreach ($meters as $m) {
-    $key = clean($m['zone']);
-    $metersByZone[$key][] = $m;
-}
-
-/* ================= WOTE CENTER CLUSTERING ================= */
-$baseLat = -1.7800;   // Wote town center
-$baseLng = 37.6200;
-
-$zoneMap = [];
-
-$radiusStep = 0.018;  // keeps zones close but not overlapping
-$angleStep = (2 * M_PI) / max(count($zones), 1);
-
-$i = 0;
-
-foreach ($zones as $z) {
-
-    $key = clean($z);
-
-    /* circular distribution around Wote (controlled cluster) */
-    $angle = $i * $angleStep;
-    $radius = 0.02 + (mt_rand(-500, 500) / 10000); // slight randomness
-
-    $lat = $baseLat + ($radius * cos($angle));
-    $lng = $baseLng + ($radius * sin($angle));
-
-    $zoneMap[$key] = [
-        "zone_name" => $z,
-        "lat" => $lat,
-        "lng" => $lng
-    ];
-
-    $i++;
-}
 ?>
 
-<!DOCTYPE html>
-<html>
-<head>
-<title>WOWASCO GIS System</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
 <style>
+.page-content{
+    margin-left:260px;
+    margin-top:75px;
+    margin-bottom:60px;
+    padding:24px;
+    min-height:calc(100vh - 135px);
+}
 
-body{
+.module-header{
+    background:#fff;
+    border:1px solid #e2e8f0;
+    border-left:5px solid #0a2a43;
+    border-radius:14px;
+    padding:22px 24px;
+    margin-bottom:20px;
+    box-shadow:0 4px 14px rgba(15,23,42,0.04);
+}
+
+.module-header h2{
     margin:0;
-    font-family:"Inter","Segoe UI",sans-serif;
-    background:#f1f5f9;
-    color:#1e293b;
-    line-height:1.5;
-    letter-spacing:0.2px;
-    -webkit-font-smoothing:antialiased;
-    -moz-osx-font-smoothing:grayscale;
+    color:#0a2a43;
+    font-size:24px;
 }
-/* ================= TYPOGRAPHY ENHANCEMENT ================= */
 
-h1,h2,h3,h4,h5,h6{
-    margin-top:0;
+.module-header p{
+    margin:7px 0 0;
+    color:#64748b;
+    font-size:14px;
+    line-height:1.6;
+}
+
+.coming-soon-panel{
+    background:#fff;
+    border:1px solid #e2e8f0;
+    border-radius:14px;
+    padding:26px;
+    box-shadow:0 4px 14px rgba(15,23,42,0.04);
+}
+
+.status-pill{
+    display:inline-flex;
+    align-items:center;
+    background:#eff6ff;
+    color:#1e3a8a;
+    border:1px solid #bfdbfe;
+    border-radius:999px;
+    padding:7px 12px;
+    font-size:12px;
+    font-weight:800;
+    margin-bottom:14px;
+}
+
+.coming-soon-panel h3{
+    margin:0;
     color:#0f172a;
-    font-weight:800;
-    letter-spacing:-0.5px;
+    font-size:22px;
 }
 
-.title{
-    letter-spacing:-0.7px;
-    line-height:1.2;
-}
-
-.zone-title{
-    font-size:16px;
-    font-weight:800;
-    letter-spacing:-0.3px;
-}
-
-.info-box{
+.coming-soon-panel > p{
+    max-width:850px;
+    margin:10px 0 22px;
+    color:#475569;
     font-size:14px;
     line-height:1.7;
 }
 
-.badge{
-    font-size:11px;
-    font-weight:700;
-    letter-spacing:0.2px;
+.feature-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+    gap:14px;
 }
 
-.empty{
-    font-size:13px;
-}
-
-.overlay{
-    margin-left:260px;
-    margin-top:70px;
-    padding:10px;
-}
-
-.title{
-    font-size:20px;
-    font-weight:700;
-    color:#0b2d5c;
-    margin-bottom:10px;
-}
-
-#map{
-    height:78vh;
-    width:100%;
+.feature-card{
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
     border-radius:12px;
+    padding:16px;
 }
 
-.info-box{
-    position:absolute;
-    top:120px;
-    left:290px;
-    width:360px;
-    background:white;
-    padding:15px;
-    border-radius:12px;
-    box-shadow:0 6px 18px rgba(0,0,0,0.15);
+.feature-card h4{
+    margin:0 0 8px;
+    color:#0a2a43;
+    font-size:15px;
+}
+
+.feature-card p{
+    margin:0;
+    color:#64748b;
     font-size:13px;
-    display:none;
-    z-index:999;
-    line-height:1.5;
+    line-height:1.6;
 }
 
-.zone-title{
-    font-weight:700;
-    color:#0b2d5c;
-    margin-bottom:8px;
+.note-panel{
+    margin-top:18px;
+    background:#ecfdf3;
+    color:#166534;
+    border:1px solid #bbf7d0;
+    border-left:4px solid #22c55e;
+    border-radius:12px;
+    padding:14px 16px;
+    font-size:13px;
+    line-height:1.6;
 }
 
-.badge{
-    padding:3px 8px;
-    border-radius:6px;
-    font-size:11px;
-    color:white;
+@media(max-width:1000px){
+    .page-content{
+        margin-left:0;
+        padding:15px;
+    }
 }
-
-.Active{ background:green; }
-.Inactive{ background:orange; }
-.UnderMaintenance{ background:red; }
-
-.empty{
-    color:#888;
-    font-style:italic;
-}
-
 </style>
-</head>
 
-<body>
+<div class="page-content">
 
-<?php include __DIR__ . '/../../includes/sidebar.php'; ?>
-<?php include __DIR__ . '/../../includes/navbar.php'; ?>
+    <div class="module-header">
+        <h2>GIS Mapping</h2>
+        <p>Interactive zone mapping and field visibility for WOWASCO operations.</p>
+    </div>
 
-<div class="overlay">
+    <div class="coming-soon-panel">
+        <div class="status-pill">Coming Soon</div>
 
-<div class="title">🗺 WOWASCO GIS - Wote Cluster View</div>
+        <h3>GIS Mapping Module Is Being Prepared</h3>
 
-<div id="map"></div>
-<div class="info-box" id="infoBox"></div>
+        <p>
+            This module will give users a map-based view of WOWASCO zones, meters,
+            water sources, supply schedules and field activity. The page is currently
+            reserved while the GIS tools are being finalized.
+        </p>
+
+        <div class="feature-grid">
+
+            <div class="feature-card">
+                <h4>Zone Map View</h4>
+                <p>Users will view operational zones on a map and inspect zone boundaries, status and assigned supply areas.</p>
+            </div>
+
+            <div class="feature-card">
+                <h4>Meter Locations</h4>
+                <p>Users will see mapped customer meters, meter status and basic customer allocation by zone.</p>
+            </div>
+
+            <div class="feature-card">
+                <h4>Water Sources</h4>
+                <p>Users will identify boreholes, tanks, treatment points and other water sources linked to service zones.</p>
+            </div>
+
+            <div class="feature-card">
+                <h4>Supply Schedules</h4>
+                <p>Users will view zone supply days, hours, affected areas and active rationing information.</p>
+            </div>
+
+            <div class="feature-card">
+                <h4>Maintenance Visibility</h4>
+                <p>Users will see scheduled maintenance, interruptions and affected zones directly from the map.</p>
+            </div>
+
+            <div class="feature-card">
+                <h4>Field Operations</h4>
+                <p>Users will support field planning by locating meters, assets, zones and reported service issues.</p>
+            </div>
+
+        </div>
+
+        <div class="note-panel">
+            The GIS module is coming soon. For now, use Zone Management to manage zones,
+            water sources, maintenance notices and supply schedules.
+        </div>
+    </div>
 
 </div>
-
-<?php include __DIR__ . '/../../includes/footer.php'; ?>
-
-<script>
-
-/* ================= MAP ================= */
-var map = L.map('map', {
-    zoomControl: false
-}).setView([-1.7800, 37.6200], 13);
-
-/* zoom top-left */
-L.control.zoom({ position: 'topleft' }).addTo(map);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: 'WOWASCO GIS'
-}).addTo(map);
-
-/* ================= DATA ================= */
-var zones = <?php echo json_encode($zoneMap); ?>;
-var metersByZone = <?php echo json_encode($metersByZone); ?>;
-
-/* ================= DRAW ZONES (TRIANGLES) ================= */
-Object.keys(zones).forEach(function(key){
-
-    let z = zones[key];
-    let meters = metersByZone[key] || [];
-
-    /* TRIANGLE SHAPE */
-    let polygon = L.polygon([
-        [z.lat, z.lng],
-        [z.lat + 0.012, z.lng - 0.010],
-        [z.lat - 0.012, z.lng - 0.010]
-    ], {
-        color: "#0b2d5c",
-        weight: 2,
-        fillColor: meters.length ? "#cfe2ff" : "#f5f5f5",
-        fillOpacity: 0.45
-    }).addTo(map);
-
-    polygon.on('mouseover', function () {
-
-        let html = "<div class='zone-title'>" + z.zone_name + "</div>";
-        html += "Meters: <b>" + meters.length + "</b><hr>";
-
-        if (meters.length === 0) {
-            html += "<div class='empty'>No meters installed</div>";
-        } else {
-
-            meters.forEach(m => {
-
-                let cls = (m.status || "").replace(/\s+/g,'');
-
-                html += "• <b>" + m.serial_number + "</b><br>";
-                html += m.customer_name + " (" + m.customer_type + ") ";
-                html += "<span class='badge " + cls + "'>" + m.status + "</span><br><br>";
-            });
-        }
-
-        document.getElementById("infoBox").style.display = "block";
-        document.getElementById("infoBox").innerHTML = html;
-    });
-
-    polygon.on('mouseout', function () {
-        document.getElementById("infoBox").style.display = "none";
-    });
-
-    polygon.on('click', function () {
-        map.setView([z.lat, z.lng], 14);
-    });
-
-});
-
-</script>
-
-</body>
-</html>
