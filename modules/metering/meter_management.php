@@ -1,6 +1,24 @@
 <?php
 include $_SERVER['DOCUMENT_ROOT'].'/wowasco-system/api/db.php';
 
+function clean($value){
+    return htmlspecialchars(trim((string)($value ?? '')), ENT_QUOTES, 'UTF-8');
+}
+
+function tableExists($conn, $table){
+    $table = $conn->real_escape_string($table);
+    $res = $conn->query("SHOW TABLES LIKE '$table'");
+    return $res && $res->num_rows > 0;
+}
+
+function columnExists($conn, $table, $column){
+    if (!tableExists($conn, $table)) return false;
+    $table = $conn->real_escape_string($table);
+    $column = $conn->real_escape_string($column);
+    $res = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$column'");
+    return $res && $res->num_rows > 0;
+}
+
 /* =========================================================
    CREATE DEACTIVATION COLUMN IF NOT EXISTS
 ========================================================= */
@@ -102,7 +120,7 @@ exit;
 
 if(isset($_POST['register_meter'])){
 
-    $serial_number = $_POST['serial_number'];
+    $serial_number = trim($_POST['serial_number'] ?? '');
     $model = $_POST['model'];
     $meter_type = $_POST['meter_type'];
     $installation_date = $_POST['installation_date'];
@@ -129,11 +147,58 @@ if(isset($_POST['register_meter'])){
 
     if($check->num_rows > 0){
 
+        $stmt = $conn->prepare("
+            UPDATE meters
+            SET
+                model = ?,
+                meter_type = ?,
+                installation_date = ?,
+                customer_name = ?,
+                customer_type = ?,
+                zone = ?,
+                national_id = ?,
+                customer_phone = ?,
+                alternative_phone = ?,
+                is_deactivated = 0
+            WHERE serial_number = ?
+        ");
+
+        $stmt->bind_param(
+            "ssssssssss",
+            $model,
+            $meter_type,
+            $installation_date,
+            $customer_name,
+            $customer_type,
+            $zone,
+            $national_id,
+            $customer_phone,
+            $alternative_phone,
+            $serial_number
+        );
+
+        if($stmt->execute()){
+
+            echo "
+            <script>
+            alert('Assigned meter record updated successfully.');
+            window.location.href =
+            window.location.pathname +
+            window.location.search;
+            </script>
+            ";
+
+            exit;
+        }
+
+        else {
+
         echo "
         <script>
-        alert('Meter serial already exists.');
+        alert('Meter serial already exists, but the record could not be updated.');
         </script>
         ";
+        }
     }
 
     else {
@@ -194,6 +259,43 @@ if(isset($_POST['register_meter'])){
             alert('Error registering meter.');
             </script>
             ";
+        }
+    }
+}
+
+/* =========================================================
+   FETCH ASSIGNED APPLICATION SERIALS FOR REGISTER DROPDOWN
+========================================================= */
+
+$assignedMeterApplications = [];
+
+if (
+    tableExists($conn, 'meter_applications') &&
+    columnExists($conn, 'meter_applications', 'serial_number')
+) {
+    $assignedSql = "
+        SELECT
+            ma.id,
+            ma.application_ref,
+            ma.customer_name,
+            ma.contact,
+            ma.id_number,
+            ma.zone,
+            ma.meter_type,
+            ma.customer_type,
+            ma.serial_number,
+            ma.installation_date
+        FROM meter_applications ma
+        WHERE ma.serial_number IS NOT NULL
+        AND ma.serial_number != ''
+        ORDER BY ma.id DESC
+    ";
+
+    $assignedResult = $conn->query($assignedSql);
+
+    if ($assignedResult) {
+        while ($assigned = $assignedResult->fetch_assoc()) {
+            $assignedMeterApplications[] = $assigned;
         }
     }
 }
@@ -781,6 +883,12 @@ table.dataTable tbody tr:hover{
     box-shadow:0 0 0 3px rgba(37,99,235,0.1);
 }
 
+.field-hint{
+    color:#64748b;
+    font-size:12px;
+    line-height:1.4;
+}
+
 .submit-btn{
     background:linear-gradient(135deg,#1e7d4f,#249c63);
     color:white;
@@ -1247,10 +1355,47 @@ onclick="closeRegisterModal()">
 
 <label>Meter Serial</label>
 
-<input
-type="text"
+<select
 name="serial_number"
+id="register_serial_number"
+onchange="fillAssignedMeterDetails(this)"
 required>
+
+<option value="">
+-- Select Assigned Meter Serial --
+</option>
+
+<?php if (!empty($assignedMeterApplications)): ?>
+
+<?php foreach ($assignedMeterApplications as $application): ?>
+
+<option
+value="<?= clean($application['serial_number']) ?>"
+data-customer-name="<?= clean($application['customer_name']) ?>"
+data-national-id="<?= clean($application['id_number']) ?>"
+data-phone="<?= clean($application['contact']) ?>"
+data-customer-type="<?= clean($application['customer_type']) ?>"
+data-meter-type="<?= clean($application['meter_type']) ?>"
+data-zone="<?= clean($application['zone']) ?>"
+data-installation-date="<?= clean($application['installation_date']) ?>">
+<?= clean($application['serial_number']) ?> - <?= clean($application['customer_name']) ?>
+</option>
+
+<?php endforeach; ?>
+
+<?php else: ?>
+
+<option value="" disabled>
+No assigned meter serials available
+</option>
+
+<?php endif; ?>
+
+</select>
+
+<small class="field-hint">
+Only serials assigned in Customer Management appear here.
+</small>
 
 </div>
 
@@ -1269,7 +1414,7 @@ required>
 
 <label>Meter Type</label>
 
-<select name="meter_type" required>
+<select name="meter_type" id="register_meter_type" required>
 
 <option value="">
 -- Select Meter Type --
@@ -1294,6 +1439,7 @@ Conventional Meter
 <input
 type="text"
 name="customer_name"
+id="register_customer_name"
 required>
 
 </div>
@@ -1305,6 +1451,7 @@ required>
 <input
 type="text"
 name="national_id"
+id="register_national_id"
 required>
 
 </div>
@@ -1316,6 +1463,7 @@ required>
 <input
 type="text"
 name="customer_phone"
+id="register_customer_phone"
 required>
 
 </div>
@@ -1334,7 +1482,7 @@ name="alternative_phone">
 
 <label>Customer Type</label>
 
-<select name="customer_type" required>
+<select name="customer_type" id="register_customer_type" required>
 
 <option value="">
 -- Select --
@@ -1367,6 +1515,7 @@ Domestic
 <input
 type="date"
 name="installation_date"
+id="register_installation_date"
 max="<?= date('Y-m-d'); ?>"
 required>
 
@@ -1376,7 +1525,7 @@ required>
 
 <label>Zone</label>
 
-<select name="zone" required>
+<select name="zone" id="register_zone" required>
 
 <option value="">
 -- Select Zone --
@@ -1431,6 +1580,71 @@ Register Meter
 <script src="https://cdn.datatables.net/responsive/3.0.3/js/dataTables.responsive.min.js"></script>
 
 <script>
+
+/* =========================================================
+   ASSIGNED METER APPLICATION DROPDOWN
+========================================================= */
+
+function setRegisterSelectValue(id, value){
+
+    const select = document.getElementById(id);
+
+    if(!select){
+
+        return;
+    }
+
+    value = value || '';
+
+    if(value && !Array.from(select.options).some(option => option.value === value || option.text === value)){
+
+        const option = document.createElement('option');
+
+        option.value = value;
+        option.text = value;
+
+        select.appendChild(option);
+    }
+
+    select.value = value;
+}
+
+function fillAssignedMeterDetails(select){
+
+    const option = select.options[select.selectedIndex];
+
+    if(!option || !option.value){
+
+        return;
+    }
+
+    document.getElementById('register_customer_name').value =
+    option.dataset.customerName || '';
+
+    document.getElementById('register_national_id').value =
+    option.dataset.nationalId || '';
+
+    document.getElementById('register_customer_phone').value =
+    option.dataset.phone || '';
+
+    setRegisterSelectValue(
+        'register_customer_type',
+        option.dataset.customerType || ''
+    );
+
+    setRegisterSelectValue(
+        'register_meter_type',
+        option.dataset.meterType || ''
+    );
+
+    setRegisterSelectValue(
+        'register_zone',
+        option.dataset.zone || ''
+    );
+
+    document.getElementById('register_installation_date').value =
+    option.dataset.installationDate || '';
+}
 
 /* =========================================================
    DATATABLE

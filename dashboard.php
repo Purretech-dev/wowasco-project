@@ -47,6 +47,8 @@ $allowed_pages = [
     'modules/reports/metering_reports.php',
     'modules/reports/production_reports.php',
      'modules/reports/asset_reports.php',
+     'modules/reports/customer_reports.php',
+     'modules/reports/zoning_reports.php',
 ];
 
 /* =========================

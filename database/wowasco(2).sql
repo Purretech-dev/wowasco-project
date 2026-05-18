@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: May 13, 2026 at 02:44 PM
+-- Generation Time: May 18, 2026 at 03:52 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -63,7 +63,7 @@ INSERT INTO `assets` (`id`, `asset_name`, `asset_type`, `subtype`, `serial_numbe
 (7, 'smart meter', 'Smart Meter', 'Fixed Asset', 'HJ-7890YT', 'Shimo', '2026-04-30', '2026-04-30', 'Active', 70000.00, 0.00, 70000.00, '2026-04-30 15:16:50', 0, 0, NULL, NULL, NULL, NULL),
 (8, 'smart meter', 'Smart Meter', 'Fixed Asset', 'HJ-7890YT', 'Shimo', '2026-04-30', '2026-04-30', 'Active', 70000.00, 0.00, 70000.00, '2026-04-30 15:21:17', 0, 0, NULL, NULL, NULL, NULL),
 (9, 'smart meter', 'Smart Meter', 'Fixed Asset', 'HJ-7234YT', 'Shimo', '2026-04-30', '2026-04-30', 'Active', 70000.00, 0.00, 70000.00, '2026-04-30 15:23:52', 1, 0, 'HJ723Y', 'Fixed', '', '0000-00-00'),
-(10, 'motor vehicle', 'Field', NULL, 'NMB786YH', 'Wote', NULL, NULL, 'Operational', 2500000.00, 0.00, 2500000.00, '2026-05-13 07:50:37', 0, 0, 'Ford F-150', 'Fixed', 'KCL789T', '2026-04-28'),
+(10, 'motor vehicle', 'Field', NULL, 'NMB786YH', 'Wote', NULL, NULL, 'Under Maintenance', 2500000.00, 0.00, 2500000.00, '2026-05-13 07:50:37', 0, 0, 'Ford F-150', 'Fixed', 'KCL789T', '2026-04-28'),
 (11, 'motor vehicle', 'Field', NULL, 'GH675TY', 'Wote', NULL, NULL, 'Operational', 3600000.00, 0.00, 3600000.00, '2026-05-13 08:55:41', 0, 0, 'ford ranger 678', 'Fixed', '', '2026-05-13'),
 (12, 'smart meter', 'Office', NULL, 'WM-143474', 'Kundakindu', NULL, NULL, 'Active', 80000.00, 0.00, 80000.00, '2026-05-13 09:01:53', 0, 0, 'WM143M', 'Fixed', '', '2026-05-12'),
 (13, 'smart meter', 'Field', NULL, 'WM-204580', 'Town', NULL, NULL, 'Active', 80000.00, 0.00, 80000.00, '2026-05-13 09:10:00', 0, 0, 'WM204M', 'Fixed', '', '2026-05-14'),
@@ -98,6 +98,7 @@ CREATE TABLE `asset_maintenance` (
   `asset_name` varchar(255) DEFAULT NULL,
   `serial_number` varchar(100) DEFAULT NULL,
   `asset_type` varchar(100) DEFAULT NULL,
+  `model` varchar(100) DEFAULT NULL,
   `location` varchar(255) DEFAULT NULL,
   `maintenance_type` varchar(100) DEFAULT NULL,
   `issue_description` text DEFAULT NULL,
@@ -109,12 +110,22 @@ CREATE TABLE `asset_maintenance` (
   `expected_completion_date` date DEFAULT NULL,
   `actual_completion_date` date DEFAULT NULL,
   `estimated_cost` decimal(12,2) DEFAULT 0.00,
+  `parts_cost` decimal(12,2) DEFAULT 0.00,
+  `labour_cost` decimal(12,2) DEFAULT 0.00,
+  `vendor_cost` decimal(12,2) DEFAULT 0.00,
   `actual_cost` decimal(12,2) DEFAULT 0.00,
   `downtime_hours` decimal(10,2) DEFAULT 0.00,
   `status` varchar(100) DEFAULT 'Pending',
   `resolution_notes` text DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `asset_maintenance`
+--
+
+INSERT INTO `asset_maintenance` (`id`, `asset_id`, `asset_name`, `serial_number`, `asset_type`, `model`, `location`, `maintenance_type`, `issue_description`, `priority`, `reported_by`, `assigned_to`, `vendor_name`, `date_reported`, `expected_completion_date`, `actual_completion_date`, `estimated_cost`, `parts_cost`, `labour_cost`, `vendor_cost`, `actual_cost`, `downtime_hours`, `status`, `resolution_notes`, `created_at`) VALUES
+(1, 10, 'motor vehicle', 'NMB786YH', 'Field', 'Ford F-150', 'Wote', 'Inspection', 'Vehicle requires immediate inspection', 'Critical', 'James Bond', 'Peter Mwau', 'Alex Garage', '2026-05-14', '2026-05-30', '0000-00-00', 50000.00, 20000.00, 0.00, 0.00, 20000.00, 0.00, 'Approved', 'Approved proceed with maintenance', '2026-05-14 07:18:27');
 
 -- --------------------------------------------------------
 
@@ -131,6 +142,14 @@ CREATE TABLE `asset_maintenance_parts` (
   `total_cost` decimal(12,2) DEFAULT 0.00
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `asset_maintenance_parts`
+--
+
+INSERT INTO `asset_maintenance_parts` (`id`, `maintenance_id`, `part_name`, `quantity`, `unit_cost`, `total_cost`) VALUES
+(1, 1, 'CV_joint', 1, 10000.00, 10000.00),
+(2, 1, 'CV_joint', 1, 10000.00, 10000.00);
+
 -- --------------------------------------------------------
 
 --
@@ -140,12 +159,23 @@ CREATE TABLE `asset_maintenance_parts` (
 CREATE TABLE `asset_maintenance_schedule` (
   `id` int(11) NOT NULL,
   `asset_id` int(11) DEFAULT NULL,
+  `asset_name` varchar(255) DEFAULT NULL,
+  `serial_number` varchar(100) DEFAULT NULL,
   `frequency` varchar(50) DEFAULT NULL,
   `last_service_date` date DEFAULT NULL,
   `next_service_date` date DEFAULT NULL,
   `assigned_to` varchar(255) DEFAULT NULL,
-  `status` varchar(100) DEFAULT 'Active'
+  `status` varchar(100) DEFAULT 'Active',
+  `maintenance_type` varchar(100) DEFAULT NULL,
+  `notes` text DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `asset_maintenance_schedule`
+--
+
+INSERT INTO `asset_maintenance_schedule` (`id`, `asset_id`, `asset_name`, `serial_number`, `frequency`, `last_service_date`, `next_service_date`, `assigned_to`, `status`, `maintenance_type`, `notes`) VALUES
+(1, 10, 'motor vehicle', 'NMB786YH', 'Yearly', '2026-04-26', '2027-04-26', 'Cate John', 'Active', NULL, 'Scheduled maintenance');
 
 -- --------------------------------------------------------
 
@@ -155,12 +185,40 @@ CREATE TABLE `asset_maintenance_schedule` (
 
 CREATE TABLE `bills` (
   `id` int(11) NOT NULL,
+  `serial_number` varchar(100) DEFAULT NULL,
   `customer_id` int(11) NOT NULL,
   `bill_month` varchar(20) NOT NULL,
   `amount` decimal(12,2) DEFAULT 0.00,
   `status` varchar(50) DEFAULT 'Unpaid',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `bills`
+--
+
+INSERT INTO `bills` (`id`, `serial_number`, `customer_id`, `bill_month`, `amount`, `status`, `created_at`) VALUES
+(1, 'WM-130043', 16, '2026-05', 1040.26, 'Pending', '2026-05-14 08:34:12'),
+(2, 'WM-143474', 29, '2026-05', 3580.64, 'Pending', '2026-05-14 08:34:12'),
+(3, 'WM-168753', 22, '2026-05', 2282.41, 'Pending', '2026-05-14 08:34:12'),
+(4, 'WM-204580', 24, '2026-05', 4170.14, 'Pending', '2026-05-14 08:34:12'),
+(5, 'WM-306581', 25, '2026-05', 1503.47, 'Pending', '2026-05-14 08:34:12'),
+(6, 'WM-318189', 18, '2026-05', 2506.93, 'Pending', '2026-05-14 08:34:12'),
+(7, 'WM-335358', 11, '2026-05', 3524.26, 'Pending', '2026-05-14 08:34:12'),
+(8, 'WM-344352', 13, '2026-05', 1600.49, 'Pending', '2026-05-14 08:34:12'),
+(9, 'WM-351757', 21, '2026-05', 929.68, 'Pending', '2026-05-14 08:34:12'),
+(10, 'WM-381305', 15, '2026-05', 3346.92, 'Pending', '2026-05-14 08:34:12'),
+(11, 'WM-518823', 30, '2026-05', 1445.57, 'Pending', '2026-05-14 08:34:12'),
+(12, 'WM-584445', 27, '2026-05', 687.07, 'Pending', '2026-05-14 08:34:12'),
+(13, 'WM-614459', 26, '2026-05', 2598.65, 'Pending', '2026-05-14 08:34:12'),
+(14, 'WM-631195', 23, '2026-05', 2432.06, 'Pending', '2026-05-14 08:34:12'),
+(15, 'WM-766394', 12, '2026-05', 3864.34, 'Pending', '2026-05-14 08:34:12'),
+(16, 'WM-865070', 19, '2026-05', 3525.50, 'Pending', '2026-05-14 08:34:12'),
+(17, 'WM-887215', 17, '2026-05', 1534.50, 'Pending', '2026-05-14 08:34:12'),
+(18, 'WM-899869', 28, '2026-05', 595.98, 'Pending', '2026-05-14 08:34:12'),
+(19, 'WM-908885', 20, '2026-05', 1876.39, 'Pending', '2026-05-14 08:34:12'),
+(20, 'WM-934084', 14, '2026-05', 3094.04, 'Pending', '2026-05-14 08:34:12'),
+(21, 'WM-9908YT', 42, '2026-05', 1341.03, 'Pending', '2026-05-14 08:34:12');
 
 -- --------------------------------------------------------
 
@@ -235,6 +293,26 @@ CREATE TABLE `customer_case_updates` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `customer_case_updates`
+--
+
+INSERT INTO `customer_case_updates` (`id`, `case_type`, `case_id`, `action_taken`, `old_status`, `new_status`, `staff_name`, `notes`, `created_at`) VALUES
+(1, 'Meter Application', 1, 'Application Updated', 'Pending', 'Pending', 'Ben Paul', 'Ensure meter is installed at that date', '2026-05-14 08:55:58'),
+(2, 'Enquiry', 1, 'Enquiry Responded', 'Pending', 'Submitted', 'John Cate', 'Meter to be installed on 15th May 2026', '2026-05-14 08:58:35'),
+(3, 'Complaint', 1, 'Complaint Updated', 'Pending', 'Escalated', 'John Cate', 'Purchase in process', '2026-05-14 09:02:58'),
+(4, 'Meter Application', 1, 'Application Updated', 'Pending', 'Pending', '', 'Ensure meter is installed at that date', '2026-05-18 07:48:33'),
+(5, 'Enquiry', 1, 'Enquiry Responded', 'Submitted', 'Submitted', '', 'Meter to be installed on 15th May 2026', '2026-05-18 07:49:33'),
+(6, 'Complaint', 1, 'Complaint Updated', 'Escalated', 'Escalated', '', 'Purchase in process', '2026-05-18 07:50:18'),
+(7, 'Meter Application', 1, 'Application Updated', 'Pending', 'Pending', '', 'Ensure meter is installed at that date', '2026-05-18 07:57:04'),
+(8, 'Meter Application', 1, 'Application Updated', 'Pending', 'Assigned', 'John Doe', 'Ensure meter is installed at that date', '2026-05-18 07:57:57'),
+(9, 'Enquiry', 1, 'Enquiry Responded', 'Submitted', 'Submitted', '', 'Meter to be installed on 15th May 2026', '2026-05-18 07:58:13'),
+(10, 'Complaint', 1, 'Complaint Updated', 'Escalated', 'Escalated', '', 'Purchase in process', '2026-05-18 07:58:29'),
+(11, 'Enquiry', 1, 'Enquiry Responded', 'Submitted', 'Submitted', 'Jane Dave', 'Meter to be installed on 15th May 2026', '2026-05-18 08:05:01'),
+(12, 'Complaint', 1, 'Complaint Updated', 'Escalated', 'Escalated', 'Jane Dave', 'Purchase in process', '2026-05-18 08:05:48'),
+(13, 'Meter Application', 1, 'Application Updated', 'Assigned', 'Assigned', '', 'Ensure meter is installed at that date', '2026-05-18 08:07:01'),
+(14, 'Meter Application', 1, 'Application Updated', 'Assigned', 'Assigned', 'Cate Mbui', 'Ensure meter is installed at that date\nAssigned meter serial: NMU-7686TY', '2026-05-18 13:39:34');
+
 -- --------------------------------------------------------
 
 --
@@ -243,17 +321,31 @@ CREATE TABLE `customer_case_updates` (
 
 CREATE TABLE `customer_complaints` (
   `id` int(11) NOT NULL,
-  `customer_id` int(11) NOT NULL,
-  `complaint` text NOT NULL,
-  `status` varchar(30) DEFAULT 'Pending',
-  `assigned_staff` varchar(100) DEFAULT NULL,
-  `escalation_reason` text DEFAULT NULL,
-  `pending_reason` text DEFAULT NULL,
+  `complaint_ref` varchar(100) DEFAULT NULL,
+  `customer_name` varchar(255) DEFAULT NULL,
+  `contact` varchar(50) DEFAULT NULL,
+  `meter_serial` varchar(100) DEFAULT NULL,
+  `zone` varchar(100) DEFAULT NULL,
+  `complaint_type` varchar(150) DEFAULT NULL,
+  `priority` varchar(50) DEFAULT NULL,
+  `assigned_staff` varchar(255) DEFAULT NULL,
+  `description` text DEFAULT NULL,
+  `status` varchar(50) DEFAULT 'Pending',
+  `response` text DEFAULT NULL,
+  `remarks` text DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `due_date` date DEFAULT NULL,
   `resolution_notes` text DEFAULT NULL,
+  `escalation_reason` text DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `customer_complaints`
+--
+
+INSERT INTO `customer_complaints` (`id`, `complaint_ref`, `customer_name`, `contact`, `meter_serial`, `zone`, `complaint_type`, `priority`, `assigned_staff`, `description`, `status`, `response`, `remarks`, `created_at`, `due_date`, `resolution_notes`, `escalation_reason`, `updated_at`) VALUES
+(1, 'CMP-20260514-5154', 'Johnathan Rungu', '0724344556', 'WM-557776Y', 'westlands', 'Other', 'Medium', 'John Ben', 'Meter connection not done', 'Escalated', 'Purchase in process', NULL, '2026-05-14 08:02:28', NULL, 'To be avilable next week', 'procurement', '2026-05-18 07:58:29');
 
 -- --------------------------------------------------------
 
@@ -263,19 +355,27 @@ CREATE TABLE `customer_complaints` (
 
 CREATE TABLE `customer_enquiries` (
   `id` int(11) NOT NULL,
-  `enquiry_ref` varchar(50) DEFAULT NULL,
-  `customer_name` varchar(150) DEFAULT NULL,
-  `phone` varchar(50) DEFAULT NULL,
-  `email` varchar(100) DEFAULT NULL,
-  `enquiry_type` varchar(100) DEFAULT NULL,
-  `subject` varchar(150) DEFAULT NULL,
+  `enquiry_ref` varchar(100) DEFAULT NULL,
+  `customer_name` varchar(255) DEFAULT NULL,
+  `contact` varchar(50) DEFAULT NULL,
+  `email` varchar(255) DEFAULT NULL,
+  `enquiry_type` varchar(150) DEFAULT NULL,
+  `subject` varchar(255) DEFAULT NULL,
   `message` text DEFAULT NULL,
-  `status` varchar(50) DEFAULT 'Submitted',
+  `status` varchar(50) DEFAULT 'Pending',
   `response` text DEFAULT NULL,
+  `remarks` text DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `assigned_staff` varchar(100) DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `customer_enquiries`
+--
+
+INSERT INTO `customer_enquiries` (`id`, `enquiry_ref`, `customer_name`, `contact`, `email`, `enquiry_type`, `subject`, `message`, `status`, `response`, `remarks`, `created_at`, `assigned_staff`, `updated_at`) VALUES
+(1, 'ENQ-20260514-5286', 'Johnathan Rungu', '0724344556', 'John@gmail.com', 'Meter Application', 'Meter connection', 'Following up on meter application', 'Submitted', 'Meter to be installed on 15th May 2026', NULL, '2026-05-14 08:01:55', 'Peter Ben', '2026-05-14 08:58:35');
 
 -- --------------------------------------------------------
 
@@ -359,7 +459,7 @@ INSERT INTO `meters` (`id`, `serial_number`, `zone`, `status`, `created_at`, `na
 (11, 'WM-335358', 'Kilala', 'Active', '2026-05-11 11:33:30', '34455657', '0723344556', '0724354646', 'Domestic', 'Grace Mwikali', 'Smart Meter', 'WM33M', '2026-05-01', 0, 'Good', NULL, 43, 54, 1, NULL, 0, NULL, 0),
 (12, 'WM-766394', 'Westlands', 'Active', '2026-05-11 11:33:30', '23344556', '0735465657', '0735465758', 'Residential', 'John Mutua', 'Smart Meter', 'WM766T', '2026-05-05', 0, 'Good', NULL, 53, 82, 1, NULL, 0, NULL, 0),
 (13, 'WM-344352', 'Town', 'Active', '2026-05-11 11:33:30', '34455667', '0734455676', '07254657', 'Commercial', 'John Mutua', 'Smart Meter', 'WM344U', '2026-05-05', 0, 'Good', NULL, 41, 40, 1, NULL, 0, NULL, 0),
-(14, 'WM-934084', 'Kasarani', 'Active', '2026-05-11 11:33:30', '23344556', '0735464577', '0735465758', 'Domestic', 'Mutinda Hotel', 'Smart Meter', 'WM934M', '2026-05-05', 0, 'Needs Maintenance', NULL, 69, 76, 1, NULL, 0, NULL, 0),
+(14, 'WM-934084', 'Kasarani', 'Active', '2026-05-11 11:33:30', '23344556', '0735464577', '0735465758', 'Domestic', 'Joyca Hotel', 'Smart Meter', 'WM934M', '2026-05-05', 0, 'Needs Maintenance', NULL, 69, 76, 1, NULL, 0, NULL, 0),
 (15, 'WM-381305', 'Kilala', 'Active', '2026-05-11 11:33:30', '23344556', '0734455667', '0735465768', 'Commercial', 'Mtito Traders', 'Smart Meter', 'WM381U', '2026-04-28', 0, 'Good', NULL, 74, 60, 1, NULL, 0, NULL, 0),
 (16, 'WM-130043', 'Town', 'Active', '2026-05-11 11:33:30', '34455667', '0734455667', '0735465768', 'Commercial', 'Makindu Hospital', 'Smart Meter', 'WM130O', '2026-04-27', 0, 'Good', NULL, 67, 67, 1, NULL, 0, NULL, 0),
 (17, 'WM-887215', 'Town', 'Active', '2026-05-11 11:33:30', '23344556', '0724354657', '0724354657', 'Commercial', 'Wote Market', 'Smart Meter', 'WM887K', '2026-04-26', 0, 'Needs Maintenance', NULL, 46, 73, 1, NULL, 0, NULL, 0),
@@ -371,12 +471,13 @@ INSERT INTO `meters` (`id`, `serial_number`, `zone`, `status`, `created_at`, `na
 (23, 'WM-631195', 'Kilala', 'Inactive', '2026-05-11 11:33:30', '', '', NULL, 'Commercial', 'Wote Market', '', '', '0000-00-00', 0, 'Good', NULL, 58, 47, 1, NULL, 0, NULL, 0),
 (24, 'WM-204580', 'Town', 'Active', '2026-05-11 11:33:30', '', '', NULL, 'Industrial', 'Wote Market', '', '', '0000-00-00', 0, 'Needs Maintenance', NULL, 83, 46, 1, NULL, 0, NULL, 0),
 (25, 'WM-306581', 'Return', 'Active', '2026-05-11 11:33:30', '', '', NULL, 'Domestic', 'Grace Mwikali', '', '', '0000-00-00', 0, 'Good', NULL, 89, 45, 1, NULL, 0, NULL, 0),
-(26, 'WM-614459', 'Kitikyumu', 'Inactive', '2026-05-11 11:33:30', '', '', NULL, 'Industrial', 'Mtito Traders', '', '', '0000-00-00', 0, 'Good', NULL, 72, 76, 1, NULL, 0, NULL, 0),
+(26, 'WM-614459', 'Kitikyumu', 'Inactive', '2026-05-11 11:33:30', '', '', NULL, 'Industrial', 'Mtito Traders', '', '', '0000-00-00', 0, 'Good', NULL, 72, 76, 1, NULL, 0, NULL, 1),
 (27, 'WM-584445', 'Mukuyuni', 'Active', '2026-05-11 11:33:30', '', '', NULL, 'Domestic', 'Mutinda Hotel', 'Smart Meter', 'WM544W', '2026-04-28', 0, 'Needs Maintenance', NULL, 47, 32, 1, NULL, 0, NULL, 0),
 (28, 'WM-899869', 'Kilala', 'Active', '2026-05-11 11:33:30', '', '', NULL, 'Institution', 'John Mutua', '', '', '0000-00-00', 0, 'Good', NULL, 49, 98, 1, NULL, 0, NULL, 1),
 (29, 'WM-143474', 'Kundakindu', 'Active', '2026-05-11 11:33:30', '', '', NULL, 'Domestic', 'John Mutua', 'Smart Meter', 'WM143M', '2026-05-12', 0, 'Good', NULL, 87, 91, 1, NULL, 0, NULL, 0),
 (30, 'WM-518823', 'Town', 'Active', '2026-05-11 11:33:30', '', '', NULL, 'Residential', 'Makueni Boys School', 'Smart Meter', 'WM518M', '2026-05-04', 0, 'Good', NULL, 75, 91, 1, NULL, 0, NULL, 1),
-(42, 'WM-9908YT', 'Unoa', 'Active', '2026-05-12 10:45:33', '34455667', '0724352435', '0714352435', 'Domestic', 'Joyce John', 'Smart Meter', 'WM990Y', '2026-04-29', 0, 'Good', NULL, 100, 100, 1, NULL, 0, NULL, 0);
+(42, 'WM-9908YT', 'Unoa', 'Active', '2026-05-12 10:45:33', '34455667', '0724352435', '0714352435', 'Domestic', 'Joyce John', 'Smart Meter', 'WM990Y', '2026-04-29', 0, 'Good', NULL, 100, 100, 1, NULL, 0, NULL, 0),
+(43, 'NMU-7686TY', 'westlands', 'Assigned', '2026-05-18 13:39:34', '34455667', '0724344556', '0734455667', 'Residential', 'Johnathan Rungu', 'Smart Meter', 'NMU-768', '2026-05-15', 0, 'Good', NULL, 100, 100, 1, NULL, 0, NULL, 0);
 
 -- --------------------------------------------------------
 
@@ -430,25 +531,33 @@ INSERT INTO `meter_alert_logs` (`id`, `meter_id`, `alert_type`, `severity`, `ale
 
 CREATE TABLE `meter_applications` (
   `id` int(11) NOT NULL,
-  `application_ref` varchar(50) DEFAULT NULL,
-  `customer_name` varchar(150) NOT NULL,
-  `contact` varchar(50) NOT NULL,
-  `id_number` varchar(50) NOT NULL,
-  `zone` varchar(100) NOT NULL,
-  `meter_type` varchar(50) NOT NULL,
-  `customer_type` varchar(100) NOT NULL,
+  `application_ref` varchar(100) DEFAULT NULL,
+  `customer_name` varchar(255) DEFAULT NULL,
+  `contact` varchar(50) DEFAULT NULL,
+  `id_number` varchar(100) DEFAULT NULL,
+  `zone` varchar(100) DEFAULT NULL,
+  `meter_type` varchar(100) DEFAULT NULL,
+  `customer_type` varchar(100) DEFAULT NULL,
   `national_id_copy` varchar(255) DEFAULT NULL,
   `status` varchar(50) DEFAULT 'Pending',
+  `response` text DEFAULT NULL,
   `remarks` text DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `assigned_staff` varchar(100) DEFAULT NULL,
-  `response` text DEFAULT NULL,
   `rejection_reason` text DEFAULT NULL,
   `meter_serial` varchar(100) DEFAULT NULL,
   `installation_date` date DEFAULT NULL,
   `reviewed_at` datetime DEFAULT NULL,
-  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `serial_number` varchar(100) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `meter_applications`
+--
+
+INSERT INTO `meter_applications` (`id`, `application_ref`, `customer_name`, `contact`, `id_number`, `zone`, `meter_type`, `customer_type`, `national_id_copy`, `status`, `response`, `remarks`, `created_at`, `assigned_staff`, `rejection_reason`, `meter_serial`, `installation_date`, `reviewed_at`, `updated_at`, `serial_number`) VALUES
+(1, 'MTRAPP-20260514-3039', 'Johnathan Rungu', '0724344556', '34455667', 'westlands', 'Smart Meter', 'Residential', 'uploads/customer_ids/ID_1778745679_4758.png', 'Assigned', 'Ensure meter is installed at that date', NULL, '2026-05-14 08:01:19', 'Peter Mbui', NULL, 'NMU-7686TY', '2026-05-15', '2026-05-18 16:39:34', '2026-05-18 13:39:34', NULL);
 
 -- --------------------------------------------------------
 
@@ -536,6 +645,49 @@ INSERT INTO `production_records` (`id`, `production_date`, `source_name`, `pumpe
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `pumped_volume_entries`
+--
+
+CREATE TABLE `pumped_volume_entries` (
+  `id` int(11) NOT NULL,
+  `meter_id` int(11) NOT NULL,
+  `pumped_date` date NOT NULL,
+  `volume_m3` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `source_type` varchar(50) DEFAULT 'Manual Entry',
+  `remarks` text DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `pumped_volume_entries`
+--
+
+INSERT INTO `pumped_volume_entries` (`id`, `meter_id`, `pumped_date`, `volume_m3`, `source_type`, `remarks`, `created_at`) VALUES
+(1, 16, '2026-04-17', 1883.63, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(2, 29, '2026-05-09', 2252.74, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(3, 22, '2026-04-28', 7849.32, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(4, 24, '2026-04-27', 2862.45, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(5, 25, '2026-04-25', 1742.75, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(6, 18, '2026-04-18', 7350.19, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(7, 11, '2026-05-07', 6968.84, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(8, 13, '2026-04-16', 3256.33, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(9, 21, '2026-04-20', 8150.63, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(10, 15, '2026-04-16', 8555.00, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(11, 30, '2026-04-22', 8189.42, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(12, 27, '2026-05-11', 6603.92, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(13, 26, '2026-05-08', 6769.72, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(14, 23, '2026-04-15', 6189.37, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(15, 12, '2026-05-06', 2670.65, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(16, 19, '2026-04-30', 4038.05, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(17, 17, '2026-04-25', 7687.14, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(18, 28, '2026-05-10', 1713.24, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(19, 20, '2026-05-05', 8367.20, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(20, 14, '2026-04-28', 8557.63, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
+(32, 16, '2026-05-14', 5413.00, 'Meter Reading', '', '2026-05-14 06:39:41');
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `rationing_schedule`
 --
 
@@ -616,8 +768,18 @@ CREATE TABLE `water_rationing_schedule` (
   `end_time` time DEFAULT NULL,
   `notice` text DEFAULT NULL,
   `status` varchar(50) DEFAULT 'Active',
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `source` varchar(150) DEFAULT NULL,
+  `notice_type` varchar(100) DEFAULT 'Rationing',
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `water_rationing_schedule`
+--
+
+INSERT INTO `water_rationing_schedule` (`id`, `zone`, `rationing_day`, `start_time`, `end_time`, `notice`, `status`, `created_at`, `source`, `notice_type`, `updated_at`) VALUES
+(1, 'Westlands', 'Monday', '08:00:00', '18:00:00', 'Supply will be done at this time', 'Active', '2026-05-14 09:07:03', '', 'Rationing', '2026-05-18 07:50:59');
 
 -- --------------------------------------------------------
 
@@ -652,6 +814,13 @@ CREATE TABLE `zones` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `zones`
+--
+
+INSERT INTO `zones` (`id`, `zone_name`, `zone_code`, `source_name`, `officer_in_charge`, `status`, `notes`, `created_at`) VALUES
+(1, 'Westlands', '001', 'Kaiti II', 'Paul John', 'Active', 'Supply in process', '2026-05-14 09:09:32');
+
 -- --------------------------------------------------------
 
 --
@@ -665,6 +834,14 @@ CREATE TABLE `zone_activity_log` (
   `staff_name` varchar(150) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `zone_activity_log`
+--
+
+INSERT INTO `zone_activity_log` (`id`, `action_type`, `description`, `staff_name`, `created_at`) VALUES
+(1, 'Zone Saved', 'Zone saved or updated: Westlands', '', '2026-05-14 09:09:32'),
+(2, 'Zone Status Updated', 'Zone ID 1 updated to Active', 'Zone Manager', '2026-05-14 09:09:38');
 
 -- --------------------------------------------------------
 
@@ -777,8 +954,7 @@ ALTER TABLE `customer_complaints`
 -- Indexes for table `customer_enquiries`
 --
 ALTER TABLE `customer_enquiries`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `enquiry_ref` (`enquiry_ref`);
+  ADD PRIMARY KEY (`id`);
 
 --
 -- Indexes for table `customer_meter_applications`
@@ -798,7 +974,8 @@ ALTER TABLE `infrastructure`
 --
 ALTER TABLE `meters`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `serial_number` (`serial_number`);
+  ADD UNIQUE KEY `serial_number` (`serial_number`),
+  ADD UNIQUE KEY `unique_meter_serial` (`serial_number`);
 
 --
 -- Indexes for table `meter_activity_logs`
@@ -817,9 +994,7 @@ ALTER TABLE `meter_alert_logs`
 -- Indexes for table `meter_applications`
 --
 ALTER TABLE `meter_applications`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `id_number` (`id_number`),
-  ADD UNIQUE KEY `application_ref` (`application_ref`);
+  ADD PRIMARY KEY (`id`);
 
 --
 -- Indexes for table `meter_readings`
@@ -839,6 +1014,14 @@ ALTER TABLE `payments`
 --
 ALTER TABLE `production_records`
   ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `pumped_volume_entries`
+--
+ALTER TABLE `pumped_volume_entries`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `meter_id` (`meter_id`),
+  ADD KEY `pumped_date` (`pumped_date`);
 
 --
 -- Indexes for table `rationing_schedule`
@@ -924,25 +1107,25 @@ ALTER TABLE `asset_audit_logs`
 -- AUTO_INCREMENT for table `asset_maintenance`
 --
 ALTER TABLE `asset_maintenance`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `asset_maintenance_parts`
 --
 ALTER TABLE `asset_maintenance_parts`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `asset_maintenance_schedule`
 --
 ALTER TABLE `asset_maintenance_schedule`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `bills`
 --
 ALTER TABLE `bills`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=22;
 
 --
 -- AUTO_INCREMENT for table `complaints`
@@ -966,19 +1149,19 @@ ALTER TABLE `customers`
 -- AUTO_INCREMENT for table `customer_case_updates`
 --
 ALTER TABLE `customer_case_updates`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=15;
 
 --
 -- AUTO_INCREMENT for table `customer_complaints`
 --
 ALTER TABLE `customer_complaints`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `customer_enquiries`
 --
 ALTER TABLE `customer_enquiries`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `customer_meter_applications`
@@ -996,7 +1179,7 @@ ALTER TABLE `infrastructure`
 -- AUTO_INCREMENT for table `meters`
 --
 ALTER TABLE `meters`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=43;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=44;
 
 --
 -- AUTO_INCREMENT for table `meter_activity_logs`
@@ -1008,19 +1191,19 @@ ALTER TABLE `meter_activity_logs`
 -- AUTO_INCREMENT for table `meter_alert_logs`
 --
 ALTER TABLE `meter_alert_logs`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=16;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
 
 --
 -- AUTO_INCREMENT for table `meter_applications`
 --
 ALTER TABLE `meter_applications`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `meter_readings`
 --
 ALTER TABLE `meter_readings`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=32;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=21;
 
 --
 -- AUTO_INCREMENT for table `payments`
@@ -1033,6 +1216,12 @@ ALTER TABLE `payments`
 --
 ALTER TABLE `production_records`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+
+--
+-- AUTO_INCREMENT for table `pumped_volume_entries`
+--
+ALTER TABLE `pumped_volume_entries`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=33;
 
 --
 -- AUTO_INCREMENT for table `rationing_schedule`
@@ -1062,7 +1251,7 @@ ALTER TABLE `water_loss_logs`
 -- AUTO_INCREMENT for table `water_rationing_schedule`
 --
 ALTER TABLE `water_rationing_schedule`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `water_sources`
@@ -1074,13 +1263,13 @@ ALTER TABLE `water_sources`
 -- AUTO_INCREMENT for table `zones`
 --
 ALTER TABLE `zones`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `zone_activity_log`
 --
 ALTER TABLE `zone_activity_log`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `zone_maintenance`

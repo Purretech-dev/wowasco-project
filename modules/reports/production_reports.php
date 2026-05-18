@@ -17,11 +17,9 @@ function tableExists($conn, $table){
 
 function columnExists($conn, $table, $column){
     if (!tableExists($conn, $table)) return false;
-
     $table = $conn->real_escape_string($table);
     $column = $conn->real_escape_string($column);
     $res = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$column'");
-
     return $res && $res->num_rows > 0;
 }
 
@@ -29,8 +27,14 @@ function getCol($conn, $table, $options){
     foreach ($options as $col) {
         if (columnExists($conn, $table, $col)) return $col;
     }
-
     return null;
+}
+
+function classifyNRW($percent){
+    if ($percent <= 10) return ['Efficient', 'good'];
+    if ($percent <= 20) return ['Moderate', 'warning'];
+    if ($percent <= 30) return ['High Loss', 'danger'];
+    return ['Critical NRW', 'critical'];
 }
 
 if (!tableExists($conn, 'meters')) {
@@ -45,6 +49,8 @@ if (!tableExists($conn, 'meter_readings')) {
     die("<div class='page-content'>Meter readings table was not found.</div>");
 }
 
+/* ================= COLUMN MAPPING ================= */
+
 $serialCol = getCol($conn, 'meters', ['serial_number','meter_serial','serial','meter_no']);
 $zoneCol = getCol($conn, 'meters', ['zone','zone_name','location']);
 $statusCol = getCol($conn, 'meters', ['status','meter_status']);
@@ -55,12 +61,23 @@ if (!$serialCol) {
     die("<div class='page-content'>Meter serial column was not found.</div>");
 }
 
+/* ================= FILTERS ================= */
+
 $from = $_GET['from'] ?? date('Y-m-01');
 $to = $_GET['to'] ?? date('Y-m-t');
 $zone = $_GET['zone'] ?? '';
 $customer_type = $_GET['customer_type'] ?? '';
 $status = $_GET['status'] ?? '';
 $search = $_GET['search'] ?? '';
+
+$hasFilter = (
+    $from !== date('Y-m-01') ||
+    $to !== date('Y-m-t') ||
+    $zone !== '' ||
+    $customer_type !== '' ||
+    $status !== '' ||
+    $search !== ''
+);
 
 $where = "WHERE 1=1";
 
@@ -96,6 +113,8 @@ if ($search !== '') {
 
 $safeFrom = $conn->real_escape_string($from);
 $safeTo = $conn->real_escape_string($to);
+
+/* ================= MAIN REPORT DATA ================= */
 
 $sql = "
 SELECT
@@ -153,27 +172,88 @@ ORDER BY produced_volume DESC, nrw_percent DESC
 ";
 
 $reportRows = $conn->query($sql);
+
+/* ================= KPI CALCULATIONS ================= */
+
+$totalMeters = 0;
+$totalProduced = 0;
+$totalBilled = 0;
+$totalNRW = 0;
+$totalEntries = 0;
+$activeMeters = 0;
+
+$zoneMap = [];
+$typeMap = [];
+$riskFlags = [];
+
 $rows = [];
 
 if ($reportRows) {
     while($row = $reportRows->fetch_assoc()) {
         $rows[] = $row;
+
+        $totalMeters++;
+        $totalProduced += (float)$row['produced_volume'];
+        $totalBilled += (float)$row['billed_volume'];
+        $totalNRW += (float)$row['nrw_volume'];
+        $totalEntries += (int)$row['entry_count'];
+
+        if (strtolower(trim($row['meter_status'])) === 'active') {
+            $activeMeters++;
+        }
+
+        $z = $row['zone_name'] ?: 'Unassigned';
+        $t = $row['customer_type'] ?: 'Unknown';
+
+        if (!isset($zoneMap[$z])) {
+            $zoneMap[$z] = ['label'=>$z, 'meters'=>0, 'produced'=>0, 'billed'=>0, 'nrw'=>0];
+        }
+
+        $zoneMap[$z]['meters']++;
+        $zoneMap[$z]['produced'] += (float)$row['produced_volume'];
+        $zoneMap[$z]['billed'] += (float)$row['billed_volume'];
+        $zoneMap[$z]['nrw'] += (float)$row['nrw_volume'];
+
+        if (!isset($typeMap[$t])) {
+            $typeMap[$t] = ['label'=>$t, 'meters'=>0, 'produced'=>0, 'billed'=>0, 'nrw'=>0];
+        }
+
+        $typeMap[$t]['meters']++;
+        $typeMap[$t]['produced'] += (float)$row['produced_volume'];
+        $typeMap[$t]['billed'] += (float)$row['billed_volume'];
+        $typeMap[$t]['nrw'] += (float)$row['nrw_volume'];
     }
 }
 
-$filteredRecords = count($rows);
+$nrwPercent = $totalProduced > 0 ? round(($totalNRW / $totalProduced) * 100, 2) : 0;
+$revenueWaterPercent = $totalProduced > 0 ? round(($totalBilled / $totalProduced) * 100, 2) : 0;
+$avgProduction = $totalMeters > 0 ? round($totalProduced / $totalMeters, 2) : 0;
 
-$zones = $zoneCol
-    ? $conn->query("SELECT DISTINCT `$zoneCol` AS v FROM meters WHERE `$zoneCol` IS NOT NULL AND `$zoneCol`!='' ORDER BY `$zoneCol` ASC")
-    : null;
+[$nrwClass, $nrwClassName] = classifyNRW($nrwPercent);
 
-$statuses = $statusCol
-    ? $conn->query("SELECT DISTINCT `$statusCol` AS v FROM meters WHERE `$statusCol` IS NOT NULL AND `$statusCol`!='' ORDER BY `$statusCol` ASC")
-    : null;
+$zoneData = array_values($zoneMap);
+$typeData = array_values($typeMap);
 
-$types = $customerTypeCol
-    ? $conn->query("SELECT DISTINCT `$customerTypeCol` AS v FROM meters WHERE `$customerTypeCol` IS NOT NULL AND `$customerTypeCol`!='' ORDER BY `$customerTypeCol` ASC")
-    : null;
+usort($zoneData, fn($a,$b) => $b['produced'] <=> $a['produced']);
+usort($typeData, fn($a,$b) => $b['produced'] <=> $a['produced']);
+
+$topZone = $zoneData[0]['label'] ?? 'N/A';
+$topType = $typeData[0]['label'] ?? 'N/A';
+
+if ($nrwPercent > 30) $riskFlags[] = "Critical NRW detected at {$nrwPercent}% of produced water.";
+if ($nrwPercent > 20 && $nrwPercent <= 30) $riskFlags[] = "High water loss detected at {$nrwPercent}% of produced water.";
+if ($totalProduced <= 0) $riskFlags[] = "No pumped production volume recorded for the selected period.";
+if ($totalBilled <= 0 && $totalProduced > 0) $riskFlags[] = "Production exists but billed consumption is missing.";
+if ($totalNRW > 0) $riskFlags[] = number_format($totalNRW,2) . " m³ is currently classified as non-revenue water.";
+if ($activeMeters == 0) $riskFlags[] = "No active meters found in the selected scope.";
+if (empty($riskFlags)) $riskFlags[] = "No major production reporting risk detected.";
+
+/* ================= DROPDOWNS ================= */
+
+$zones = $zoneCol ? $conn->query("SELECT DISTINCT `$zoneCol` AS v FROM meters WHERE `$zoneCol` IS NOT NULL AND `$zoneCol`!='' ORDER BY `$zoneCol` ASC") : null;
+$statuses = $statusCol ? $conn->query("SELECT DISTINCT `$statusCol` AS v FROM meters WHERE `$statusCol` IS NOT NULL AND `$statusCol`!='' ORDER BY `$statusCol` ASC") : null;
+$types = $customerTypeCol ? $conn->query("SELECT DISTINCT `$customerTypeCol` AS v FROM meters WHERE `$customerTypeCol` IS NOT NULL AND `$customerTypeCol`!='' ORDER BY `$customerTypeCol` ASC") : null;
+
 ?>
 
 <link rel="stylesheet" href="https://cdn.datatables.net/2.0.8/css/dataTables.dataTables.min.css">
@@ -184,24 +264,36 @@ $types = $customerTypeCol
     <div class="module-header no-print">
         <div>
             <h2>Production Reports</h2>
-            <p>Filtered production, billed consumption, NRW, revenue water, zones and customer category reporting.</p>
+            <p>Filtered enterprise reports for pumped volume, billed consumption, NRW, zones and customer categories.</p>
+        </div>
+
+        <div class="header-actions">
+            <div class="dropdown">
+                <button type="button" class="download-btn">Download Report ▾</button>
+                <div class="dropdown-content">
+                    <a href="#" onclick="triggerExport('excel'); return false;">Excel</a>
+                    <a href="#" onclick="triggerExport('pdf'); return false;">PDF</a>
+                </div>
+            </div>
+
+            <button type="button" onclick="printFilteredReport()" class="print-btn">Print Data</button>
         </div>
     </div>
 
     <form method="GET" class="filter-card no-print">
         <input type="hidden" name="page" value="<?= clean($_GET['page'] ?? 'modules/reports/production_reports.php') ?>">
 
-        <div class="filter-field">
+        <div>
             <label>From</label>
             <input type="date" name="from" value="<?= clean($from) ?>">
         </div>
 
-        <div class="filter-field">
+        <div>
             <label>To</label>
             <input type="date" name="to" value="<?= clean($to) ?>">
         </div>
 
-        <div class="filter-field">
+        <div>
             <label>Zone</label>
             <select name="zone">
                 <option value="">All Zones</option>
@@ -213,7 +305,7 @@ $types = $customerTypeCol
             </select>
         </div>
 
-        <div class="filter-field">
+        <div>
             <label>Customer Type</label>
             <select name="customer_type">
                 <option value="">All Customer Types</option>
@@ -225,7 +317,7 @@ $types = $customerTypeCol
             </select>
         </div>
 
-        <div class="filter-field">
+        <div>
             <label>Status</label>
             <select name="status">
                 <option value="">All Statuses</option>
@@ -237,40 +329,43 @@ $types = $customerTypeCol
             </select>
         </div>
 
-        <div class="filter-field search-box">
+        <div class="search-box">
             <label>Search</label>
             <input type="text" name="search" value="<?= clean($search) ?>" placeholder="Serial, customer, zone...">
         </div>
 
-        <div class="filter-actions">
-            <button type="submit">Apply Filters</button>
-            <a href="dashboard.php?page=modules/reports/production_reports.php" class="clear-btn">Reset</a>
-        </div>
+        <button type="submit">Apply Filters</button>
+        <a class="clear-btn" href="dashboard.php?page=modules/reports/production_reports.php">Reset</a>
+        <button type="button" onclick="printFilteredReport()" class="print-btn">Print Data</button>
     </form>
 
-    <div class="table-panel">
-        <div class="table-toolbar no-print">
-            <div class="table-count">
-                <span>Production Records</span>
-                <strong><?= number_format($filteredRecords) ?></strong>
-            </div>
+    <?php if (!$hasFilter): ?>
+        <div class="filter-warning no-print">
+            Default report shows the current month. Apply filters before downloading or printing a specific report.
+        </div>
+    <?php endif; ?>
 
-            <div class="table-actions">
-                <div class="dropdown">
-                    <button type="button" class="download-btn">Download Report &#9662;</button>
+    <div id="printArea">
 
-                    <div class="dropdown-content">
-                        <a href="#" onclick="triggerExport('excel'); return false;">Excel</a>
-                        <a href="#" onclick="triggerExport('pdf'); return false;">PDF</a>
-                    </div>
+        <div class="table-panel">
+            <div class="table-toolbar no-print">
+                <div class="table-count">
+                    Production Records:
+                    <strong><?= number_format(count($rows)) ?></strong>
                 </div>
 
-                <button type="button" onclick="printFilteredReport()" class="print-btn">Print Data</button>
+                <div class="table-actions">
+                    <div class="dropdown">
+                        <button type="button" class="download-btn">Download Report</button>
+                        <div class="dropdown-content">
+                            <a href="#" onclick="triggerExport('excel'); return false;">Excel</a>
+                            <a href="#" onclick="triggerExport('pdf'); return false;">PDF</a>
+                        </div>
+                    </div>
+                </div>
             </div>
-        </div>
 
-        <div class="table-wrap">
-            <table id="productionTable" class="display nowrap">
+            <table id="productionTable" class="display">
                 <thead>
                     <tr>
                         <th>Meter Serial</th>
@@ -296,202 +391,90 @@ $types = $customerTypeCol
                             <td><?= clean($r['zone_name'] ?: 'Unassigned') ?></td>
                             <td><?= clean($r['customer_type'] ?: 'Unknown') ?></td>
                             <td><?= clean($r['meter_status'] ?: 'N/A') ?></td>
-                            <td><?= number_format((int)$r['entry_count']) ?></td>
-                            <td><?= number_format((float)$r['produced_volume'], 2) ?> m³</td>
-                            <td><?= number_format((float)$r['billed_volume'], 2) ?> m³</td>
-                            <td><?= number_format((float)$r['nrw_volume'], 2) ?> m³</td>
-                            <td><?= number_format((float)$r['nrw_percent'], 2) ?>%</td>
-                            <td><?= number_format((float)$r['revenue_water_percent'], 2) ?>%</td>
+                            <td><?= number_format($r['entry_count']) ?></td>
+                            <td><?= number_format($r['produced_volume'],2) ?> m³</td>
+                            <td><?= number_format($r['billed_volume'],2) ?> m³</td>
+                            <td><?= number_format($r['nrw_volume'],2) ?> m³</td>
+                            <td><?= number_format($r['nrw_percent'],2) ?>%</td>
+                            <td><?= number_format($r['revenue_water_percent'],2) ?>%</td>
                             <td><?= clean($r['last_pumped_date'] ?: 'N/A') ?></td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
             </table>
+
         </div>
+
     </div>
 
 </div>
 
 <style>
-:root{
-    --primary:#0a2a43;
-    --primary-soft:#123d5d;
-    --border:#dbe3ee;
-    --muted:#64748b;
-    --text:#334155;
-    --bg:#f4f7fb;
-    --white:#ffffff;
-}
-
-*{
-    box-sizing:border-box;
-}
-
 .page-content{
     margin-left:260px;
     margin-top:75px;
     margin-bottom:60px;
-    padding:24px;
-    background:var(--bg);
+    padding:20px;
+    background:#f4f7fb;
     min-height:calc(100vh - 135px);
-    font-family:'Segoe UI', Tahoma, sans-serif;
-    color:var(--text);
+    font-family:Arial, sans-serif;
+}
+
+.module-header,
+.filter-card,
+.kpi-card,
+.report-card,
+.report-title{
+    background:#fff;
+    border:1px solid #e5e7eb;
+    border-radius:10px;
+    box-shadow:0 2px 6px rgba(0,0,0,0.04);
 }
 
 .module-header{
-    background:var(--white);
-    border-radius:8px;
     padding:18px 20px;
-    margin-bottom:16px;
-    border:1px solid var(--border);
-    border-left:5px solid var(--primary);
+    margin-bottom:18px;
+    border-left:4px solid #0a2a43;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:14px;
 }
 
 .module-header h2{
     margin:0;
-    font-size:22px;
-    line-height:1.2;
-    color:var(--primary);
+    color:#0a2a43;
+    font-size:20px;
 }
 
 .module-header p{
     margin:6px 0 0;
-    color:var(--muted);
+    color:#64748b;
     font-size:14px;
-    line-height:1.5;
 }
 
-.filter-card{
-    background:var(--white);
-    border-radius:8px;
-    padding:16px;
-    margin-bottom:16px;
-    display:grid;
-    grid-template-columns:repeat(6, minmax(145px, 1fr));
-    gap:12px;
-    align-items:end;
-    border:1px solid var(--border);
-}
-
-.filter-field{
-    min-width:0;
-}
-
-.filter-field label{
-    display:block;
-    margin-bottom:5px;
-    font-size:13px;
-    font-weight:600;
-    color:#475569;
-}
-
-.filter-field input,
-.filter-field select{
-    width:100%;
-    min-height:40px;
-    padding:9px 10px;
-    border-radius:7px;
-    border:1px solid var(--border);
-    background:#f8fafc;
-    color:var(--text);
-    font-size:13px;
-    outline:none;
-}
-
-.filter-field input:focus,
-.filter-field select:focus,
-.dt-search input:focus,
-.dt-length select:focus{
-    border-color:var(--primary);
-    box-shadow:0 0 0 2px rgba(10,42,67,0.12);
-}
-
-.search-box{
-    grid-column:span 2;
-}
-
-.filter-actions{
+.header-actions{
     display:flex;
-    flex-direction:row;
     gap:8px;
     align-items:center;
-    justify-content:flex-start;
-    white-space:nowrap;
 }
 
-.download-btn,
 .print-btn,
+.download-btn,
 .filter-card button,
 .clear-btn{
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    min-height:40px;
-    border:none;
-    background:var(--primary);
+    background:#0a2a43;
     color:#fff;
-    padding:10px 14px;
-    border-radius:7px;
+    border:none;
+    padding:9px 13px;
+    border-radius:6px;
     cursor:pointer;
     font-size:13px;
-    font-weight:600;
     text-decoration:none;
-    line-height:1;
-    white-space:nowrap;
-}
-
-.download-btn:hover,
-.print-btn:hover,
-.filter-card button:hover{
-    background:var(--primary-soft);
 }
 
 .clear-btn{
     background:#64748b;
-}
-
-.clear-btn:hover{
-    background:#475569;
-}
-
-.table-panel{
-    overflow:visible;
-}
-
-.table-toolbar{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    gap:12px;
-    margin-bottom:12px;
-    flex-wrap:nowrap;
-    position:relative;
-    z-index:20;
-}
-
-.table-count{
-    display:flex;
-    align-items:center;
-    gap:8px;
-    color:#475569;
-    font-size:14px;
-    min-width:0;
-    white-space:nowrap;
-}
-
-.table-count strong{
-    color:var(--primary);
-    font-size:18px;
-}
-
-.table-actions{
-    display:flex;
-    flex-direction:row;
-    gap:8px;
-    align-items:center;
-    justify-content:flex-end;
-    flex-wrap:nowrap;
-    white-space:nowrap;
 }
 
 .dropdown{
@@ -503,288 +486,391 @@ $types = $customerTypeCol
     display:none;
     position:absolute;
     right:0;
-    top:calc(100% + 6px);
     background:#fff;
-    min-width:150px;
+    min-width:140px;
+    border:1px solid #e5e7eb;
     border-radius:8px;
-    overflow:hidden;
-    border:1px solid var(--border);
-    box-shadow:0 12px 22px rgba(0,0,0,0.14);
-    z-index:9999;
+    box-shadow:0 6px 18px rgba(0,0,0,0.12);
+    z-index:20;
 }
 
 .dropdown-content a{
     display:block;
-    padding:11px 13px;
-    color:#334155;
+    padding:10px 12px;
     text-decoration:none;
+    color:#334155;
     font-size:13px;
-    background:#fff;
 }
 
-.dropdown-content a:hover{
-    background:#f8fafc;
-}
-
-.dropdown:hover .dropdown-content,
-.dropdown:focus-within .dropdown-content{
+.dropdown:hover .dropdown-content{
     display:block;
 }
 
-.table-wrap{
-    width:100%;
-    overflow-x:auto;
-    background:#fff;
-    border:1px solid var(--border);
-    border-radius:8px;
-    padding:12px;
+.filter-card{
+    padding:14px;
+    margin-bottom:18px;
+    display:flex;
+    align-items:end;
+    gap:10px;
+    flex-wrap:wrap;
 }
 
-.dt-container,
-.dataTables_wrapper{
-    width:100%;
+.filter-card label{
+    display:block;
+    font-size:13px;
+    font-weight:600;
+    color:#334155;
+    margin-bottom:5px;
+}
+
+.filter-card input,
+.filter-card select{
+    padding:9px;
+    border:1px solid #d1d5db;
+    border-radius:6px;
+    min-width:150px;
+}
+
+.search-box input{
+    min-width:260px;
+}
+
+.filter-warning{
+    background:#fff;
+    border-left:4px solid #0a2a43;
+    color:#334155;
+    padding:12px 15px;
+    border-radius:8px;
+    margin-bottom:18px;
+    font-size:14px;
+}
+
+.report-title{
+    padding:14px 18px;
+    margin-bottom:18px;
+}
+
+.report-title h3{
     margin:0;
+    color:#0a2a43;
+}
+
+.report-title p{
+    margin:5px 0 0;
+    color:#64748b;
+    font-size:13px;
+}
+
+.kpi-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+    gap:12px;
+    margin-bottom:18px;
+}
+
+.kpi-card{
+    padding:15px;
+}
+
+.kpi-card span{
+    display:block;
+    color:#64748b;
+    font-size:13px;
+    margin-bottom:8px;
+}
+
+.kpi-card strong{
+    display:block;
+    color:#0a2a43;
+    font-size:22px;
+    margin-bottom:5px;
+}
+
+.kpi-card small{
+    color:#64748b;
+}
+
+.report-grid{
+    display:grid;
+    gap:18px;
+    margin-bottom:18px;
+}
+
+.report-grid.three{
+    grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+}
+
+.report-card{
+    padding:18px;
+    margin-bottom:18px;
+    overflow-x:auto;
+}
+
+.table-panel{
+    margin-bottom:18px;
+    overflow-x:auto;
+}
+
+.table-panel h3{
+    margin:0 0 14px;
+    color:#0a2a43;
+    font-size:17px;
+}
+
+.report-card h3{
+    margin:0 0 14px;
+    color:#0a2a43;
+    font-size:17px;
+}
+
+.metric-row{
+    display:flex;
+    justify-content:space-between;
+    gap:12px;
+    padding:9px 0;
+    border-bottom:1px solid #e5e7eb;
+    font-size:14px;
+}
+
+.metric-small{
+    display:block;
+    color:#64748b;
+    font-size:12px;
+    margin-bottom:7px;
+}
+
+.risk-list{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+    gap:10px;
+}
+
+.risk-item{
+    background:#f8fafc;
+    border-left:4px solid #0a2a43;
+    border-radius:8px;
+    padding:12px;
+    color:#334155;
+    font-size:14px;
+}
+
+.good{
+    color:#15803d !important;
+}
+
+.warning{
+    color:#a16207 !important;
+}
+
+.danger{
+    color:#b91c1c !important;
+}
+
+.critical{
+    color:#7f1d1d !important;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:14px;
+}
+
+th{
+    background:#f8fafc;
+    color:#334155;
+    text-align:left;
+    padding:10px;
+    border-bottom:1px solid #e5e7eb;
+}
+
+td{
+    padding:10px;
+    border-bottom:1px solid #e5e7eb;
+    color:#334155;
+}
+
+.dt-button{
+    display:none !important;
+}
+
+.module-header,
+.filter-warning{
+    display:none !important;
+}
+
+.table-panel{
+    background:#fff;
+    border:1px solid #dbe3ee;
+    border-radius:10px;
+    padding:16px;
+    box-shadow:0 4px 14px rgba(15,23,42,0.04);
+}
+
+.table-toolbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+    margin-bottom:14px;
+    flex-wrap:wrap;
+}
+
+.table-count{
+    color:#475569;
+    font-size:14px;
+}
+
+.table-count strong{
+    color:#0a2a43;
+    font-size:18px;
+}
+
+.table-actions{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+}
+
+th{
+    background:#0a2a43 !important;
+    color:#fff !important;
+    border-bottom:1px solid #0a2a43 !important;
+    white-space:nowrap;
+}
+
+.dt-container .dt-layout-row:first-child,
+.dt-container .dt-layout-row:first-child .dt-layout-cell,
+.dt-container .dt-length,
+.dt-container .dt-search,
+.dataTables_wrapper .dataTables_length,
+.dataTables_wrapper .dataTables_filter{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+}
+
+.dt-container .dt-search,
+.dataTables_filter{
+    margin-left:auto;
+}
+
+@media(max-width:900px){
+    .page-content{
+        margin-left:0;
+    }
+
+    .module-header{
+        flex-direction:column;
+        align-items:flex-start;
+    }
+
+    .filter-card{
+        flex-direction:column;
+        align-items:stretch;
+    }
+
+    .filter-card input,
+    .filter-card select,
+    .filter-card button,
+    .clear-btn{
+        width:100%;
+        box-sizing:border-box;
+    }
+
+    .table-toolbar,
+    .table-actions{
+        align-items:stretch;
+        flex-direction:column;
+        width:100%;
+    }
+
+    .download-btn,
+    .print-btn{
+        width:100%;
+    }
+}
+
+.table-actions{
+    flex-wrap:nowrap;
+}
+
+.table-actions .download-btn,
+.table-actions .print-btn{
+    width:auto;
+    flex:0 0 auto;
 }
 
 .dt-container .dt-layout-row:first-child{
     display:flex !important;
-    flex-direction:row !important;
-    justify-content:space-between !important;
-    align-items:center !important;
-    gap:16px !important;
-    flex-wrap:nowrap !important;
-    margin-bottom:12px !important;
-    overflow-x:auto;
-    padding-bottom:2px;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+    flex-wrap:wrap;
+    margin:12px 0;
 }
 
-.dt-container .dt-layout-cell{
-    min-width:0;
+.dt-container .dt-layout-row:first-child .dt-layout-cell{
+    display:flex !important;
+    align-items:center;
+    width:auto !important;
 }
 
-.dt-container .dt-layout-cell.dt-layout-start{
-    flex:0 0 auto;
-}
-
-.dt-container .dt-layout-cell.dt-layout-end{
-    flex:0 0 auto;
+.dt-container .dt-layout-row:first-child .dt-layout-cell:last-child{
+    justify-content:flex-end;
     margin-left:auto;
 }
 
-.dt-length,
-.dt-search{
+.dt-container .dt-length,
+.dataTables_wrapper .dataTables_length{
     display:flex !important;
-    flex-direction:row !important;
-    align-items:center !important;
-    gap:8px !important;
+    align-items:center;
+    gap:8px;
+    float:none !important;
     margin:0 !important;
-    white-space:nowrap !important;
+    width:auto !important;
 }
 
-.dt-length label,
-.dt-search label{
-    display:flex !important;
-    flex-direction:row !important;
-    align-items:center !important;
-    gap:8px !important;
-    margin:0 !important;
-    color:#475569 !important;
-    font-size:13px !important;
-    white-space:nowrap !important;
-}
-
-.dt-length select{
-    width:78px !important;
-    min-width:78px !important;
-    height:36px !important;
-    padding:6px 8px !important;
-    border:1px solid var(--border) !important;
-    border-radius:7px !important;
-    background:#fff !important;
-    color:var(--text) !important;
-}
-
-.dt-search input{
-    width:230px !important;
-    min-width:230px !important;
-    height:36px !important;
-    padding:6px 9px !important;
-    border:1px solid var(--border) !important;
-    border-radius:7px !important;
-    background:#fff !important;
-    color:var(--text) !important;
-}
-
-.dt-info{
-    color:var(--muted);
-    font-size:13px;
-    padding-top:12px;
-}
-
-.dt-paging{
-    padding-top:12px;
-}
-
-.dt-paging button{
-    border-radius:6px !important;
-    border:1px solid var(--border) !important;
-    background:#fff !important;
-    color:var(--text) !important;
-    padding:6px 10px !important;
-    margin:0 2px !important;
-}
-
-.dt-paging button.current{
-    background:var(--primary) !important;
-    color:#fff !important;
-    border-color:var(--primary) !important;
-}
-
-.dt-buttons{
+.dt-container .dt-search,
+.dataTables_wrapper .dataTables_filter{
     display:none !important;
 }
 
-#productionTable{
-    width:100% !important;
-    border-collapse:separate;
-    border-spacing:0;
-    font-size:14px;
-    background:#fff;
-}
-
-#productionTable thead th,
-table.dataTable.display > thead > tr > th{
-    background:var(--primary) !important;
-    color:#fff !important;
-    font-size:13px;
-    font-weight:700;
-    padding:12px 12px !important;
-    border-bottom:0 !important;
-    text-align:left;
-    vertical-align:middle;
+.dt-container .dt-search label,
+.dataTables_filter label{
     white-space:nowrap;
 }
 
-#productionTable thead th:first-child{
-    border-top-left-radius:6px;
+.dt-search input,
+.dataTables_filter input{
+    width:220px;
+    max-width:100%;
 }
 
-#productionTable thead th:last-child{
-    border-top-right-radius:6px;
-}
-
-#productionTable thead th.dt-orderable-asc span.dt-column-order:before,
-#productionTable thead th.dt-orderable-desc span.dt-column-order:after,
-#productionTable thead th.dt-ordering-asc span.dt-column-order:before,
-#productionTable thead th.dt-ordering-desc span.dt-column-order:after{
-    color:#fff !important;
-    opacity:0.85 !important;
-}
-
-#productionTable tbody td,
-table.dataTable.display > tbody > tr > td{
-    padding:12px 12px !important;
-    border-bottom:1px solid #edf2f7 !important;
-    color:#475569 !important;
-    vertical-align:middle;
-    white-space:nowrap;
-}
-
-#productionTable tbody tr:nth-child(even){
-    background:#f8fafc;
-}
-
-#productionTable tbody tr:hover{
-    background:#eef6fb !important;
-}
-
-@media(max-width:1200px){
-    .filter-card{
-        grid-template-columns:repeat(3, minmax(160px, 1fr));
-    }
-
-    .search-box{
-        grid-column:span 2;
-    }
-}
-
-@media(max-width:992px){
-    .page-content{
-        margin-left:0;
-        padding:15px;
-    }
-
-    .filter-card{
-        grid-template-columns:1fr;
-    }
-
-    .search-box{
-        grid-column:auto;
-    }
-
-    .filter-actions{
-        flex-direction:row;
-        align-items:center;
-    }
-
-    .filter-card button,
-    .clear-btn{
-        flex:1 1 0;
-    }
-
-    .table-toolbar{
-        flex-direction:column;
-        align-items:stretch;
-        gap:10px;
-    }
-
-    .table-count{
-        justify-content:space-between;
-    }
-
+@media(max-width:900px){
     .table-actions{
-        width:100%;
         flex-direction:row;
-        align-items:center;
+        flex-wrap:wrap;
+        width:100%;
+    }
+
+    .dt-container .dt-layout-row:first-child,
+    .dt-container .dt-layout-row:first-child .dt-layout-cell,
+    .dt-container .dt-length,
+    .dt-container .dt-search,
+    .dataTables_wrapper .dataTables_length,
+    .dataTables_wrapper .dataTables_filter{
+        width:100% !important;
+        margin-left:0 !important;
         justify-content:flex-start;
     }
 
-    .dropdown,
-    .download-btn,
-    .print-btn{
-        flex:1 1 0;
-    }
-
-    .download-btn,
-    .print-btn{
+    .dt-search input,
+    .dataTables_filter input{
         width:100%;
-    }
-
-    .dropdown-content{
-        left:0;
-        right:auto;
-        width:100%;
-    }
-
-    .dt-container .dt-layout-row:first-child{
-        flex-direction:row !important;
-        align-items:center !important;
-        justify-content:space-between !important;
-        flex-wrap:nowrap !important;
-    }
-
-    .dt-length,
-    .dt-search,
-    .dt-length label,
-    .dt-search label{
-        width:auto !important;
-        flex-wrap:nowrap !important;
-        white-space:nowrap !important;
-    }
-
-    .dt-search input{
-        width:180px !important;
-        min-width:180px !important;
     }
 }
 </style>
@@ -800,45 +886,24 @@ table.dataTable.display > tbody > tr > td{
 <script>
 let productionTable;
 
-function getDynamicTitle(){
-    let title = 'WOWASCO Production Report';
-
-    const zone = $('select[name="zone"]').val();
-    const customerType = $('select[name="customer_type"]').val();
-    const status = $('select[name="status"]').val();
-
-    if(zone) title += ' - Zone ' + zone;
-    if(customerType) title += ' - Customer Type ' + customerType;
-    if(status) title += ' - Status ' + status;
-
-    return title;
+function getProductionTitle(){
+    return 'WOWASCO Production Report';
 }
 
-function getFilterSummaryLines(){
-    const from = $('input[name="from"]').val() || 'Any';
-    const to = $('input[name="to"]').val() || 'Any';
-    const zone = $('select[name="zone"]').val() || 'All';
-    const customerType = $('select[name="customer_type"]').val() || 'All';
-    const status = $('select[name="status"]').val() || 'All';
-    const search = $('input[name="search"]').val() || 'None';
-    const tableSearch = productionTable ? (productionTable.search() || 'None') : 'None';
-    const filteredCount = productionTable ? productionTable.rows({ search:'applied' }).count() : <?= (int)$filteredRecords ?>;
+function getProductionFilterSummary(){
+    const filteredCount = productionTable
+        ? productionTable.rows({ search:'applied' }).count()
+        : <?= count($rows) ?>;
 
     return [
         'Generated: ' + new Date().toLocaleString(),
         'Filtered Records: ' + filteredCount,
-        'Period: ' + from + ' to ' + to,
-        'Zone: ' + zone + ' | Customer Type: ' + customerType + ' | Status: ' + status,
-        'Search: ' + search + ' | Table Search: ' + tableSearch
-    ];
+        'Filters: From <?= clean($from) ?> | To <?= clean($to) ?> | Zone <?= clean($zone ?: 'All') ?> | Customer Type <?= clean($customer_type ?: 'All') ?> | Status <?= clean($status ?: 'All') ?> | Search <?= clean($search ?: 'None') ?>'
+    ].join('\n');
 }
 
-function getFilterSummary(){
-    return getFilterSummaryLines().join('\n');
-}
-
-function getExportFilename(){
-    return getDynamicTitle()
+function getProductionFilename(){
+    return getProductionTitle()
         .replace(/[^a-z0-9]+/gi, '_')
         .replace(/^_+|_+$/g, '');
 }
@@ -846,18 +911,17 @@ function getExportFilename(){
 $(document).ready(function(){
     productionTable = $('#productionTable').DataTable({
         pageLength: 10,
-        lengthMenu: [10,25,50,100],
+        lengthMenu: [10, 25, 50, 100],
         ordering: true,
         searching: true,
         paging: true,
-        autoWidth: false,
         dom: 'Blfrtip',
         buttons: [
             {
                 extend: 'excelHtml5',
-                title: getDynamicTitle,
-                filename: getExportFilename,
-                messageTop: getFilterSummary,
+                title: getProductionTitle,
+                filename: getProductionFilename,
+                messageTop: getProductionFilterSummary,
                 exportOptions: {
                     columns: ':visible',
                     modifier: {
@@ -869,9 +933,9 @@ $(document).ready(function(){
             },
             {
                 extend: 'pdfHtml5',
-                title: getDynamicTitle,
-                filename: getExportFilename,
-                messageTop: getFilterSummary,
+                title: getProductionTitle,
+                filename: getProductionFilename,
+                messageTop: getProductionFilterSummary,
                 orientation: 'landscape',
                 pageSize: 'A4',
                 exportOptions: {
@@ -881,42 +945,20 @@ $(document).ready(function(){
                         order: 'applied',
                         page: 'all'
                     }
-                },
-                customize: function(doc){
-                    doc.styles.title = {
-                        fontSize: 14,
-                        bold: true,
-                        alignment: 'left',
-                        margin: [0, 0, 0, 8]
-                    };
-
-                    if(doc.content[1] && doc.content[1].text){
-                        doc.content[1].fontSize = 9;
-                        doc.content[1].margin = [0, 0, 0, 10];
-                    }
-
-                    const tableNode = doc.content.find(item => item.table);
-                    if(tableNode){
-                        tableNode.layout = 'lightHorizontalLines';
-                    }
                 }
             }
         ],
         language: {
-            search: "Search filtered data:",
+            search: "",
+            searchPlaceholder: "",
             lengthMenu: "Show _MENU_ records per page",
             info: "Showing _START_ to _END_ of _TOTAL_ filtered records",
-            emptyTable: "No production records found for the selected filters."
+            emptyTable: "No production report records found."
         }
     });
 });
 
 function triggerExport(type){
-    if(!productionTable){
-        alert('The report table is still loading. Please try again.');
-        return;
-    }
-
     if(type === 'excel'){
         productionTable.button('.buttons-excel').trigger();
     }
@@ -926,84 +968,66 @@ function triggerExport(type){
     }
 }
 
-function escapeHtml(value){
-    return $('<div>').text(value ?? '').html();
-}
-
 function printFilteredReport(){
-    if(!productionTable){
-        alert('The report table is still loading. Please try again.');
-        return;
-    }
-
     let headers = [];
-
     $('#productionTable thead th').each(function(){
         headers.push($(this).text().trim());
     });
 
     let rows = productionTable.rows({
-        search:'applied',
-        order:'applied',
-        page:'all'
+        search: 'applied',
+        order: 'applied',
+        page: 'all'
     }).data().toArray();
-
-    let headerHtml = `
-        <div class="print-header">
-            <h2>${escapeHtml(getDynamicTitle())}</h2>
-            ${getFilterSummaryLines().map(line => `<p>${escapeHtml(line)}</p>`).join('')}
-        </div>
-    `;
 
     let tableHtml = `
         <table>
             <thead>
-                <tr>${headers.map(h => `<th>${escapeHtml(h)}</th>`).join('')}</tr>
+                <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
             </thead>
             <tbody>
                 ${
                     rows.length > 0
                     ? rows.map(row => `
                         <tr>
-                            ${row.map(cell => `<td>${escapeHtml($('<div>').html(cell).text())}</td>`).join('')}
+                            ${row.map(cell => `<td>${$('<div>').html(cell).text()}</td>`).join('')}
                         </tr>
                     `).join('')
-                    : `<tr><td colspan="${headers.length}">No filtered records found.</td></tr>`
+                    : `<tr><td colspan="${headers.length}">No records found.</td></tr>`
                 }
             </tbody>
         </table>
     `;
 
-    let printWindow = window.open('', '', 'width=1200,height=800');
+    let printWindow = window.open('', '_blank', 'width=1200,height=800');
 
     printWindow.document.write(`
         <!DOCTYPE html>
         <html>
         <head>
-            <title>${escapeHtml(getDynamicTitle())}</title>
+            <title>WOWASCO Production Report</title>
             <style>
                 body{
-                    font-family:Arial,sans-serif;
+                    font-family:Arial, sans-serif;
                     padding:20px;
                     color:#1f2937;
                 }
 
-                .print-header{
-                    border-bottom:2px solid #0a2a43;
-                    margin-bottom:15px;
-                    padding-bottom:10px;
-                }
-
-                .print-header h2{
-                    margin:0 0 6px;
+                h3{
                     color:#0a2a43;
-                    font-size:18px;
+                    margin-bottom:5px;
                 }
 
-                .print-header p{
-                    margin:3px 0;
+                .report-title{
+                    border-bottom:2px solid #0a2a43;
+                    padding-bottom:10px;
+                    margin-bottom:15px;
+                }
+
+                .report-title p{
                     font-size:12px;
                     color:#475569;
+                    margin:4px 0;
                 }
 
                 table{
@@ -1020,26 +1044,25 @@ function printFilteredReport(){
                 }
 
                 th{
-                    background:#0a2a43;
-                    color:#fff;
-                }
-
-                tbody tr:nth-child(even){
-                    background:#f8fafc;
+                    background:#f1f5f9;
+                    color:#0a2a43;
                 }
             </style>
         </head>
         <body>
-            ${headerHtml}
+            <div class="report-title">
+                <h3>WOWASCO Production Report</h3>
+                <p>${getProductionFilterSummary().replace(/\n/g, '<br>')}</p>
+            </div>
             ${tableHtml}
         </body>
         </html>
     `);
 
     printWindow.document.close();
-    printWindow.focus();
 
     printWindow.onload = function(){
+        printWindow.focus();
         printWindow.print();
     };
 }

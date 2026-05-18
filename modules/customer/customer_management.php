@@ -45,6 +45,13 @@ function columnExists($conn, $table, $column) {
     return $res && $res->num_rows > 0;
 }
 
+function getCol($conn, $table, $options) {
+    foreach ($options as $col) {
+        if (columnExists($conn, $table, $col)) return $col;
+    }
+    return null;
+}
+
 function addColumnIfMissing($conn, $table, $column, $definition) {
     if (tableExists($conn, $table) && !columnExists($conn, $table, $column)) {
         $conn->query("ALTER TABLE `$table` ADD `$column` $definition");
@@ -67,6 +74,71 @@ function logAction($conn, $caseType, $caseId, $action, $oldStatus, $newStatus, $
     ");
     $stmt->bind_param("sisssss", $caseType, $caseId, $action, $oldStatus, $newStatus, $staff, $notes);
     $stmt->execute();
+}
+
+function assignMeterSerialToApplicant($conn, $applicationId, $meterSerial, $status, $installationDate) {
+    $meterSerial = trim((string)$meterSerial);
+
+    if ($meterSerial === '' || !tableExists($conn, 'meter_applications') || !tableExists($conn, 'meters')) {
+        return true;
+    }
+
+    $appRes = $conn->query("SELECT * FROM meter_applications WHERE id=" . (int)$applicationId . " LIMIT 1");
+
+    if (!$appRes || $appRes->num_rows === 0) {
+        return false;
+    }
+
+    $application = $appRes->fetch_assoc();
+
+    $serialCol = getCol($conn, 'meters', ['serial_number','meter_serial','serial','meter_no']);
+
+    if (!$serialCol) {
+        return true;
+    }
+
+    $mapped = [
+        'customer_name' => $application['customer_name'] ?? '',
+        'customer_phone' => $application['contact'] ?? '',
+        'national_id' => $application['id_number'] ?? '',
+        'zone' => $application['zone'] ?? '',
+        'customer_type' => $application['customer_type'] ?? '',
+        'meter_type' => $application['meter_type'] ?? '',
+        'installation_date' => $installationDate ?: null,
+        'status' => $status ?: 'Assigned'
+    ];
+
+    $safeSerial = $conn->real_escape_string($meterSerial);
+    $existing = $conn->query("SELECT id FROM meters WHERE `$serialCol`='$safeSerial' LIMIT 1");
+
+    if ($existing && $existing->num_rows > 0) {
+        $meterId = (int)$existing->fetch_assoc()['id'];
+        $updates = [];
+
+        foreach ($mapped as $column => $value) {
+            if (columnExists($conn, 'meters', $column)) {
+                $updates[] = "`$column`=" . ($value === null ? "NULL" : "'" . $conn->real_escape_string((string)$value) . "'");
+            }
+        }
+
+        if (!empty($updates)) {
+            return (bool)$conn->query("UPDATE meters SET " . implode(", ", $updates) . " WHERE id=$meterId");
+        }
+
+        return true;
+    }
+
+    $columns = [$serialCol];
+    $values = ["'" . $safeSerial . "'"];
+
+    foreach ($mapped as $column => $value) {
+        if (columnExists($conn, 'meters', $column)) {
+            $columns[] = $column;
+            $values[] = $value === null ? "NULL" : "'" . $conn->real_escape_string((string)$value) . "'";
+        }
+    }
+
+    return (bool)$conn->query("INSERT INTO meters (`" . implode("`,`", $columns) . "`) VALUES (" . implode(",", $values) . ")");
 }
 
 /* ================= ADD COLUMNS IF MISSING ================= */
@@ -122,8 +194,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['crm_action'])) {
         $stmt->bind_param("sssssi", $status, $assigned, $response, $meter_serial, $installation_date, $id);
 
         if ($stmt && $stmt->execute()) {
-            logAction($conn, 'Meter Application', $id, 'Application Updated', $oldStatus, $status, $staff, $response);
-            $message = "<div class='alert green'><strong>Success.</strong><br>Meter application updated successfully.</div>";
+            $assigned = assignMeterSerialToApplicant($conn, $id, $meter_serial, $status, $installation_date);
+            $logNotes = trim($response . ($meter_serial !== '' ? "\nAssigned meter serial: " . $meter_serial : ''));
+            logAction($conn, 'Meter Application', $id, 'Application Updated', $oldStatus, $status, $staff, $logNotes);
+
+            if ($assigned) {
+                $message = "<div class='alert green'><strong>Success.</strong><br>Meter application updated and meter serial assigned to the customer.</div>";
+            } else {
+                $message = "<div class='alert red'><strong>Partial update.</strong><br>The application was saved, but the meter record could not be assigned.</div>";
+            }
         } else {
             $message = "<div class='alert red'><strong>Update failed.</strong><br>Meter application could not be updated.</div>";
         }
@@ -856,6 +935,21 @@ $updates = tableExists($conn, 'customer_case_updates') ? $conn->query("SELECT * 
 
             <div class="form-grid">
                 <div class="form-group">
+                    <label>Application Reference</label>
+                    <input type="text" id="app_reference" readonly>
+                </div>
+
+                <div class="form-group">
+                    <label>Applicant Customer</label>
+                    <input type="text" id="app_customer_name" readonly>
+                </div>
+
+                <div class="form-group">
+                    <label>Customer Contact</label>
+                    <input type="text" id="app_customer_contact" readonly>
+                </div>
+
+                <div class="form-group">
                     <label>Staff Name</label>
                     <input type="text" name="staff_name" placeholder="Officer name">
                 </div>
@@ -880,8 +974,12 @@ $updates = tableExists($conn, 'customer_case_updates') ? $conn->query("SELECT * 
                 </div>
 
                 <div class="form-group">
-                    <label>Meter Serial</label>
-                    <input type="text" name="meter_serial" id="app_meter_serial">
+                    <label>Assign Meter Serial</label>
+                    <input
+                        type="text"
+                        name="meter_serial"
+                        id="app_meter_serial"
+                        placeholder="Enter meter serial for this customer">
                 </div>
 
                 <div class="form-group">
@@ -1968,6 +2066,9 @@ function closeModal(id){
 
 function openApplicationModal(data){
     document.getElementById("app_id").value = data.id || "";
+    document.getElementById("app_reference").value = data.application_ref || ("Application #" + (data.id || ""));
+    document.getElementById("app_customer_name").value = data.customer_name || "";
+    document.getElementById("app_customer_contact").value = data.contact || "";
     document.getElementById("app_status").value = data.status || "Pending";
     document.getElementById("app_assigned").value = data.assigned_staff || "";
     document.getElementById("app_response").value = data.response || "";
