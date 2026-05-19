@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: May 18, 2026 at 03:52 PM
+-- Generation Time: May 19, 2026 at 10:15 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -59,17 +59,18 @@ INSERT INTO `assets` (`id`, `asset_name`, `asset_type`, `subtype`, `serial_numbe
 (3, 'smart meter', 'Smart Meter', 'Fixed Asset', 'HJ-7890YT', 'Shimo', '2026-04-30', '2026-04-30', 'Active', 70000.00, 0.00, 70000.00, '2026-04-30 14:56:13', 0, 1, NULL, NULL, NULL, NULL),
 (4, 'smart meter', 'Smart Meter', 'Fixed Asset', 'HJ-7890YT', 'Shimo', '2026-04-30', '2026-04-30', 'Active', 70000.00, 0.00, 70000.00, '2026-04-30 14:58:00', 0, 1, NULL, NULL, NULL, NULL),
 (5, 'smart meter', 'Smart Meter', 'Fixed Asset', 'HJ-7890YT', 'Shimo', '2026-04-30', '2026-04-30', 'Active', 70000.00, 0.00, 70000.00, '2026-04-30 15:03:51', 0, 1, NULL, NULL, NULL, NULL),
-(6, 'smart meter', 'Smart Meter', 'Fixed Asset', 'HJ-7890YT', 'Shimo', '2026-04-30', '2026-04-30', 'Active', 70000.00, 0.00, 70000.00, '2026-04-30 15:12:50', 0, 0, NULL, NULL, NULL, NULL),
-(7, 'smart meter', 'Smart Meter', 'Fixed Asset', 'HJ-7890YT', 'Shimo', '2026-04-30', '2026-04-30', 'Active', 70000.00, 0.00, 70000.00, '2026-04-30 15:16:50', 0, 0, NULL, NULL, NULL, NULL),
-(8, 'smart meter', 'Smart Meter', 'Fixed Asset', 'HJ-7890YT', 'Shimo', '2026-04-30', '2026-04-30', 'Active', 70000.00, 0.00, 70000.00, '2026-04-30 15:21:17', 0, 0, NULL, NULL, NULL, NULL),
-(9, 'smart meter', 'Smart Meter', 'Fixed Asset', 'HJ-7234YT', 'Shimo', '2026-04-30', '2026-04-30', 'Active', 70000.00, 0.00, 70000.00, '2026-04-30 15:23:52', 1, 0, 'HJ723Y', 'Fixed', '', '0000-00-00'),
-(10, 'motor vehicle', 'Field', NULL, 'NMB786YH', 'Wote', NULL, NULL, 'Under Maintenance', 2500000.00, 0.00, 2500000.00, '2026-05-13 07:50:37', 0, 0, 'Ford F-150', 'Fixed', 'KCL789T', '2026-04-28'),
+(6, 'smart meter', 'Smart Meter', 'Fixed Asset', 'HJ-7890YT', 'Shimo', '2026-04-30', '2026-04-30', 'Active', 70000.00, 0.00, 70000.00, '2026-04-30 15:12:50', 0, 0, 'HJ-789', 'Fixed', '', '0000-00-00'),
+(7, 'smart meter', 'Smart Meter', 'Fixed Asset', 'HJ-7890YT', 'Shimo', '2026-04-30', '2026-04-30', 'Active', 70000.00, 0.00, 70000.00, '2026-04-30 15:16:50', 0, 0, '', 'Hardware', '', '0000-00-00'),
+(8, 'smart meter', 'Smart Meter', 'Fixed Asset', 'HJ-7890YT', 'Shimo', '2026-04-30', '2026-04-30', 'Active', 70000.00, 0.00, 70000.00, '2026-04-30 15:21:17', 0, 0, 'HJ-789', 'Hardware', '', '0000-00-00'),
+(9, 'smart meter', 'Smart Meter', 'Fixed Asset', 'HJ-7334YT', 'Shimo', '2026-04-30', '2026-04-30', 'Active', 70000.00, 0.00, 70000.00, '2026-04-30 15:23:52', 1, 0, 'HJ723Y', 'Fixed', '', '0000-00-00'),
+(10, 'motor vehicle', 'Field', NULL, 'NMB786YH', 'Wote', NULL, NULL, 'Operational', 2500000.00, 0.00, 2500000.00, '2026-05-13 07:50:37', 0, 0, 'Ford F-150', 'Fixed', 'KCL789T', '2026-04-28'),
 (11, 'motor vehicle', 'Field', NULL, 'GH675TY', 'Wote', NULL, NULL, 'Operational', 3600000.00, 0.00, 3600000.00, '2026-05-13 08:55:41', 0, 0, 'ford ranger 678', 'Fixed', '', '2026-05-13'),
-(12, 'smart meter', 'Office', NULL, 'WM-143474', 'Kundakindu', NULL, NULL, 'Active', 80000.00, 0.00, 80000.00, '2026-05-13 09:01:53', 0, 0, 'WM143M', 'Fixed', '', '2026-05-12'),
-(13, 'smart meter', 'Field', NULL, 'WM-204580', 'Town', NULL, NULL, 'Active', 80000.00, 0.00, 80000.00, '2026-05-13 09:10:00', 0, 0, 'WM204M', 'Fixed', '', '2026-05-14'),
+(12, 'smart meter', 'Office', NULL, 'WM-143474', 'Kundakindu', NULL, NULL, 'Under Maintenance', 80000.00, 0.00, 80000.00, '2026-05-13 09:01:53', 0, 0, 'WM143M', 'Fixed', '', '2026-05-12'),
+(13, 'smart meter', 'Field', NULL, 'WM-204580', 'Town', NULL, NULL, 'Active', 80000.00, 0.00, 80000.00, '2026-05-13 09:10:00', 0, 1, 'WM204M', 'Fixed', '', '2026-05-14'),
 (14, 'smart meter', 'Field', NULL, 'WM-381305', 'Kilala', NULL, NULL, 'Active', 75000.00, 0.00, 75000.00, '2026-05-13 09:10:47', 0, 0, 'WM381U', 'Fixed', '', '2026-04-28'),
 (15, 'laptop', 'Office', NULL, 'GHT6775TY', 'wote office', NULL, NULL, 'Operational', 250000.00, 0.00, 250000.00, '2026-05-13 09:11:41', 0, 0, 'HP Elite Book', 'Hardware', '', '2026-04-30'),
-(16, 'motor vehicle', 'Office', NULL, 'NBH788YY', 'Wote', NULL, NULL, 'Operational', 4500000.00, 0.00, 4500000.00, '2026-05-13 09:13:25', 0, 0, 'Toyota Hillux 450', 'Fixed', 'KCJ570H', '2026-04-26');
+(16, 'motor vehicle', 'Office', NULL, 'NBH788YY', 'Wote', NULL, NULL, 'Operational', 4500000.00, 0.00, 4500000.00, '2026-05-13 09:13:25', 0, 0, 'Toyota Hillux 450', 'Fixed', 'KCJ570H', '2026-04-26'),
+(17, 'smart meter', 'Office', NULL, 'WM-9908YT', 'Unoa', NULL, NULL, 'Under Maintenance', 80000.00, 0.00, 80000.00, '2026-05-19 07:35:57', 0, 0, 'WM990Y', 'Fixed', '', '2026-04-29');
 
 -- --------------------------------------------------------
 
@@ -117,15 +118,19 @@ CREATE TABLE `asset_maintenance` (
   `downtime_hours` decimal(10,2) DEFAULT 0.00,
   `status` varchar(100) DEFAULT 'Pending',
   `resolution_notes` text DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `source_schedule_id` int(11) DEFAULT NULL,
+  `work_order_ref` varchar(80) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Dumping data for table `asset_maintenance`
 --
 
-INSERT INTO `asset_maintenance` (`id`, `asset_id`, `asset_name`, `serial_number`, `asset_type`, `model`, `location`, `maintenance_type`, `issue_description`, `priority`, `reported_by`, `assigned_to`, `vendor_name`, `date_reported`, `expected_completion_date`, `actual_completion_date`, `estimated_cost`, `parts_cost`, `labour_cost`, `vendor_cost`, `actual_cost`, `downtime_hours`, `status`, `resolution_notes`, `created_at`) VALUES
-(1, 10, 'motor vehicle', 'NMB786YH', 'Field', 'Ford F-150', 'Wote', 'Inspection', 'Vehicle requires immediate inspection', 'Critical', 'James Bond', 'Peter Mwau', 'Alex Garage', '2026-05-14', '2026-05-30', '0000-00-00', 50000.00, 20000.00, 0.00, 0.00, 20000.00, 0.00, 'Approved', 'Approved proceed with maintenance', '2026-05-14 07:18:27');
+INSERT INTO `asset_maintenance` (`id`, `asset_id`, `asset_name`, `serial_number`, `asset_type`, `model`, `location`, `maintenance_type`, `issue_description`, `priority`, `reported_by`, `assigned_to`, `vendor_name`, `date_reported`, `expected_completion_date`, `actual_completion_date`, `estimated_cost`, `parts_cost`, `labour_cost`, `vendor_cost`, `actual_cost`, `downtime_hours`, `status`, `resolution_notes`, `created_at`, `source_schedule_id`, `work_order_ref`) VALUES
+(1, 10, 'motor vehicle', 'NMB786YH', 'Field', 'Ford F-150', 'Wote', 'Inspection', 'Vehicle requires immediate inspection', 'Critical', 'James Bond', 'Peter Mwau', 'Alex Garage', '2026-05-14', '2026-05-30', '0000-00-00', 50000.00, 20000.00, 0.00, 0.00, 20000.00, 0.00, 'Completed', 'Approved proceed with maintenance', '2026-05-14 07:18:27', NULL, NULL),
+(2, 12, 'smart meter', 'WM-143474', 'Office', 'WM143M', 'Kundakindu', 'Corrective', 'Meter queued for maintenace', 'Critical', 'Jane Wambua', 'Jane Wambua', 'Gibson Meters', '2026-05-19', '2026-05-26', '0000-00-00', 15000.00, 0.00, 0.00, 0.00, 0.00, 0.00, 'Approved', 'Approved proceed with maintenance', '2026-05-19 07:42:04', NULL, NULL),
+(3, 17, 'smart meter', 'WM-9908YT', 'Office', 'WM990Y', 'Unoa', 'Servicing', 'Valve broken', 'Medium', 'Preventive Schedule', 'Jane Wambua', 'Gibson Meters', '2026-05-19', '2026-06-15', '2026-06-19', 15000.00, 5000.00, 5000.00, 5000.00, 15000.00, 7200.00, 'Approved', 'Works to be completed within the stipulated time', '2026-05-19 08:07:37', 3, 'WO-20260519-2DC33A');
 
 -- --------------------------------------------------------
 
@@ -167,15 +172,22 @@ CREATE TABLE `asset_maintenance_schedule` (
   `assigned_to` varchar(255) DEFAULT NULL,
   `status` varchar(100) DEFAULT 'Active',
   `maintenance_type` varchar(100) DEFAULT NULL,
-  `notes` text DEFAULT NULL
+  `notes` text DEFAULT NULL,
+  `priority` varchar(50) DEFAULT 'Medium',
+  `estimated_cost` decimal(12,2) DEFAULT 0.00,
+  `work_scope` text DEFAULT NULL,
+  `last_work_order_id` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Dumping data for table `asset_maintenance_schedule`
 --
 
-INSERT INTO `asset_maintenance_schedule` (`id`, `asset_id`, `asset_name`, `serial_number`, `frequency`, `last_service_date`, `next_service_date`, `assigned_to`, `status`, `maintenance_type`, `notes`) VALUES
-(1, 10, 'motor vehicle', 'NMB786YH', 'Yearly', '2026-04-26', '2027-04-26', 'Cate John', 'Active', NULL, 'Scheduled maintenance');
+INSERT INTO `asset_maintenance_schedule` (`id`, `asset_id`, `asset_name`, `serial_number`, `frequency`, `last_service_date`, `next_service_date`, `assigned_to`, `status`, `maintenance_type`, `notes`, `priority`, `estimated_cost`, `work_scope`, `last_work_order_id`, `updated_at`) VALUES
+(1, 10, 'motor vehicle', 'NMB786YH', 'Yearly', '2026-04-26', '2027-04-26', 'Cate John', 'Active', NULL, 'Scheduled maintenance', 'Medium', 0.00, NULL, NULL, '2026-05-19 08:04:47'),
+(2, 16, 'motor vehicle', 'NBH788YY', 'Monthly', '2026-04-30', '2026-05-30', 'Joseph Kenie', 'Active', NULL, 'Vehicle due for maintenance at that date', 'Medium', 0.00, NULL, NULL, '2026-05-19 08:04:47'),
+(3, 17, 'smart meter', 'WM-9908YT', 'Weekly', '2026-05-15', '2026-06-15', 'Jane Wambua', 'Active', 'Servicing', 'Meter requires servicing', 'Medium', 15000.00, 'Valve broken', 3, '2026-05-19 08:07:37');
 
 -- --------------------------------------------------------
 
@@ -273,7 +285,8 @@ CREATE TABLE `customers` (
 --
 
 INSERT INTO `customers` (`id`, `name`, `email`, `created_at`, `phone`, `alt_phone`, `id_number`, `meter_type`, `customer_type`, `zone`) VALUES
-(1, 'janet dow', '', '2026-05-01 15:37:35', '0713243546', '0713254364', '1324354657', 'Smart Meter', 'Domestic', 'westlands');
+(1, 'janet dow', '', '2026-05-01 15:37:35', '0713243546', '0713254364', '1324354657', 'Smart Meter', 'Domestic', 'westlands'),
+(2, 'James Bond', 'james@gmail.com', '2026-05-19 07:21:36', '0734455667', NULL, '24354657', NULL, NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -466,9 +479,9 @@ INSERT INTO `meters` (`id`, `serial_number`, `zone`, `status`, `created_at`, `na
 (18, 'WM-318189', 'Kundakindu', 'Active', '2026-05-11 11:33:30', '', '', NULL, 'Industrial', 'Green Farm', '', '', '0000-00-00', 0, 'Needs Maintenance', NULL, 87, 61, 1, NULL, 0, NULL, 0),
 (19, 'WM-865070', 'Mukuyuni', 'Active', '2026-05-11 11:33:30', '', '', NULL, 'Domestic', 'Green Farm', '', '', '0000-00-00', 0, 'Good', NULL, 74, 88, 1, NULL, 0, NULL, 0),
 (20, 'WM-908885', 'Muambani', 'Active', '2026-05-11 11:33:30', '', '', NULL, 'Institution', 'John Mutua', '', '', '0000-00-00', 0, 'Needs Maintenance', NULL, 97, 82, 1, NULL, 0, NULL, 0),
-(21, 'WM-351757', 'Mukuyuni', 'Active', '2026-05-11 11:33:30', '', '', NULL, 'Institution', 'Green Farm', '', '', '0000-00-00', 0, 'Good', NULL, 72, 33, 1, NULL, 0, NULL, 0),
+(21, 'WM-351757', 'Mukuyuni', 'Active', '2026-05-11 11:33:30', '', '', NULL, 'Commercial', 'Green Farm', 'Smart Meter', 'WM-351', '2026-04-28', 0, 'Good', NULL, 72, 33, 1, NULL, 0, NULL, 0),
 (22, 'WM-168753', 'Malawi', 'Inactive', '2026-05-11 11:33:30', '', '', NULL, 'Industrial', 'Wote Market', '', '', '0000-00-00', 0, 'Good', NULL, 75, 76, 1, NULL, 0, NULL, 0),
-(23, 'WM-631195', 'Kilala', 'Inactive', '2026-05-11 11:33:30', '', '', NULL, 'Commercial', 'Wote Market', '', '', '0000-00-00', 0, 'Good', NULL, 58, 47, 1, NULL, 0, NULL, 0),
+(23, 'WM-631195', 'Town', 'Inactive', '2026-05-11 11:33:30', '', '', NULL, 'Commercial', 'Wote Market', 'Smart Meter', 'WM-631', '2026-04-28', 0, 'Good', NULL, 58, 47, 1, NULL, 0, NULL, 0),
 (24, 'WM-204580', 'Town', 'Active', '2026-05-11 11:33:30', '', '', NULL, 'Industrial', 'Wote Market', '', '', '0000-00-00', 0, 'Needs Maintenance', NULL, 83, 46, 1, NULL, 0, NULL, 0),
 (25, 'WM-306581', 'Return', 'Active', '2026-05-11 11:33:30', '', '', NULL, 'Domestic', 'Grace Mwikali', '', '', '0000-00-00', 0, 'Good', NULL, 89, 45, 1, NULL, 0, NULL, 0),
 (26, 'WM-614459', 'Kitikyumu', 'Inactive', '2026-05-11 11:33:30', '', '', NULL, 'Industrial', 'Mtito Traders', '', '', '0000-00-00', 0, 'Good', NULL, 72, 76, 1, NULL, 0, NULL, 1),
@@ -683,7 +696,8 @@ INSERT INTO `pumped_volume_entries` (`id`, `meter_id`, `pumped_date`, `volume_m3
 (18, 28, '2026-05-10', 1713.24, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
 (19, 20, '2026-05-05', 8367.20, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
 (20, 14, '2026-04-28', 8557.63, 'Meter Reading', 'Auto-fed from meter readings', '2026-05-14 06:38:05'),
-(32, 16, '2026-05-14', 5413.00, 'Meter Reading', '', '2026-05-14 06:39:41');
+(32, 16, '2026-05-14', 5413.00, 'Meter Reading', '', '2026-05-14 06:39:41'),
+(33, 24, '2026-05-19', 5245.00, 'Manual Entry', 'volume', '2026-05-19 07:28:39');
 
 -- --------------------------------------------------------
 
@@ -734,10 +748,18 @@ CREATE TABLE `users` (
   `name` varchar(150) NOT NULL,
   `email` varchar(150) NOT NULL,
   `password` varchar(255) NOT NULL,
-  `role` enum('admin','customer') DEFAULT 'customer',
+  `role` varchar(50) NOT NULL DEFAULT 'customer',
   `customer_id` int(11) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `users`
+--
+
+INSERT INTO `users` (`id`, `name`, `email`, `password`, `role`, `customer_id`, `created_at`) VALUES
+(1, 'Super Admin', 'admin@wowasco.go.ke', '$2y$10$P.g7QnaJVCnl7sPRLBKbOORPTPBldeovsCiFHQYNJq3liXI6Y5dU.', 'super_admin', NULL, '2026-05-19 07:05:58'),
+(2, 'James Bond', 'james@gmail.com', '$2y$10$3nR4Z0Nzqinl5TD7PSyKkeIoOmxkq6.UrL50Dkp9jx450vAavxqMC', 'customer', 2, '2026-05-19 07:21:36');
 
 -- --------------------------------------------------------
 
@@ -1095,7 +1117,7 @@ ALTER TABLE `zone_supply_schedule`
 -- AUTO_INCREMENT for table `assets`
 --
 ALTER TABLE `assets`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
 
 --
 -- AUTO_INCREMENT for table `asset_audit_logs`
@@ -1107,7 +1129,7 @@ ALTER TABLE `asset_audit_logs`
 -- AUTO_INCREMENT for table `asset_maintenance`
 --
 ALTER TABLE `asset_maintenance`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `asset_maintenance_parts`
@@ -1119,7 +1141,7 @@ ALTER TABLE `asset_maintenance_parts`
 -- AUTO_INCREMENT for table `asset_maintenance_schedule`
 --
 ALTER TABLE `asset_maintenance_schedule`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `bills`
@@ -1143,7 +1165,7 @@ ALTER TABLE `consumption`
 -- AUTO_INCREMENT for table `customers`
 --
 ALTER TABLE `customers`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `customer_case_updates`
@@ -1221,7 +1243,7 @@ ALTER TABLE `production_records`
 -- AUTO_INCREMENT for table `pumped_volume_entries`
 --
 ALTER TABLE `pumped_volume_entries`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=33;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=34;
 
 --
 -- AUTO_INCREMENT for table `rationing_schedule`
@@ -1239,7 +1261,7 @@ ALTER TABLE `smart_meter_applications`
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `water_loss_logs`
