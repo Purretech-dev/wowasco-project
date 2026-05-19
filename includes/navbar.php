@@ -138,7 +138,8 @@
     </div>
 
     <div class="nav-right">
-        <span>👤 Welcome, Admin</span>
+        <span>Welcome, <?= htmlspecialchars($_SESSION['name'] ?? 'Admin') ?></span>
+        <a href="auth/logout.php" style="color:#0a2a43;background:#f4c542;padding:9px 12px;border-radius:999px;text-decoration:none;font-weight:800;font-size:13px;">Logout</a>
     </div>
 
 </div>

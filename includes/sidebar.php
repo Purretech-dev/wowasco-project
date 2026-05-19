@@ -295,9 +295,15 @@ $isReports    = isActiveModule('modules/reports');
         <a href="dashboard.php?page=modules/reports/metering_reports.php" class="<?= isActivePage('modules/reports/metering_reports.php') ?>">Meter Reports</a>
         <a href="dashboard.php?page=modules/reports/production_reports.php" class="<?= isActivePage('modules/reports/production_reports.php') ?>">Production Reports</a>
         <a href="dashboard.php?page=modules/reports/asset_reports.php" class="<?= isActivePage('modules/reports/asset_reports.php') ?>">Asset Reports</a>
-         <a href="dashboard.php?page=modules/reports/customer_reports.php" class="<?= isActivePage('modules/reports/customer_reports.php') ?>">Customer Reports</a>
-          <a href="dashboard.php?page=modules/reports/zoning_reports.php" class="<?= isActivePage('modules/reports/zoning_reports.php') ?>">zoning Reports</a>
+        <a href="dashboard.php?page=modules/reports/customer_reports.php" class="<?= isActivePage('modules/reports/customer_reports.php') ?>">Customer Reports</a>
+        <a href="dashboard.php?page=modules/reports/zoning_reports.php" class="<?= isActivePage('modules/reports/zoning_reports.php') ?>">Zoning Reports</a>
     </div>
+
+    <?php if (($_SESSION['role'] ?? '') === 'super_admin'): ?>
+        <a href="dashboard.php?page=modules/admin/user_management.php" class="<?= isActivePage('modules/admin/user_management.php') ?>">
+            <span>User Management</span>
+        </a>
+    <?php endif; ?>
 
 </div>
 

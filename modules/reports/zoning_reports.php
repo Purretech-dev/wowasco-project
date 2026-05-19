@@ -555,7 +555,7 @@ tbody tr:hover{
     justify-content:space-between;
     gap:14px;
     flex-wrap:wrap;
-    margin:12px 0;
+    margin:22px 0 34px;
 }
 
 .dt-container .dt-layout-row:first-child .dt-layout-cell{
@@ -577,6 +577,11 @@ tbody tr:hover{
     float:none !important;
     margin:0 !important;
     width:auto !important;
+}
+
+.dt-container .dt-length,
+.dataTables_wrapper .dataTables_length{
+    margin-bottom:22px !important;
 }
 
 .dt-container .dt-search,

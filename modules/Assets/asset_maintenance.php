@@ -82,6 +82,46 @@ CREATE TABLE IF NOT EXISTS asset_maintenance_schedule (
 ");
 
 /* =========================================================
+   SAFE COLUMN UPGRADES
+========================================================= */
+
+function ensureColumn($conn, $table, $column, $definition){
+
+    $table = $conn->real_escape_string($table);
+    $column = $conn->real_escape_string($column);
+
+    $check = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$column'");
+
+    if($check && $check->num_rows == 0){
+
+        $conn->query("ALTER TABLE `$table` ADD `$column` $definition");
+    }
+}
+
+ensureColumn($conn, 'assets', 'is_deactivated', 'TINYINT(1) DEFAULT 0');
+ensureColumn($conn, 'assets', 'asset_name', 'VARCHAR(255) NULL');
+ensureColumn($conn, 'assets', 'serial_number', 'VARCHAR(100) NULL');
+ensureColumn($conn, 'assets', 'model', 'VARCHAR(255) NULL');
+ensureColumn($conn, 'assets', 'asset_type', 'VARCHAR(100) NULL');
+ensureColumn($conn, 'assets', 'location', 'VARCHAR(255) NULL');
+ensureColumn($conn, 'assets', 'status', 'VARCHAR(100) NULL');
+
+ensureColumn($conn, 'asset_maintenance', 'source_schedule_id', 'INT NULL');
+ensureColumn($conn, 'asset_maintenance', 'work_order_ref', 'VARCHAR(80) NULL');
+
+ensureColumn($conn, 'asset_maintenance_schedule', 'maintenance_type', "VARCHAR(100) DEFAULT 'Preventive'");
+ensureColumn($conn, 'asset_maintenance_schedule', 'priority', "VARCHAR(50) DEFAULT 'Medium'");
+ensureColumn($conn, 'asset_maintenance_schedule', 'estimated_cost', 'DECIMAL(12,2) DEFAULT 0');
+ensureColumn($conn, 'asset_maintenance_schedule', 'work_scope', 'TEXT NULL');
+ensureColumn($conn, 'asset_maintenance_schedule', 'last_work_order_id', 'INT NULL');
+ensureColumn($conn, 'asset_maintenance_schedule', 'updated_at', 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
+
+function assetMaintenanceRef(){
+
+    return 'WO-' . date('Ymd') . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 6));
+}
+
+/* =========================================================
    FETCH ASSET DETAILS HELPER
 ========================================================= */
 
@@ -108,6 +148,8 @@ if(isset($_POST['create_work_order'])){
 
     $asset_id = intval($_POST['asset_id'] ?? 0);
     $asset = getAsset($conn, $asset_id);
+    $source_schedule_id = intval($_POST['source_schedule_id'] ?? 0);
+    $work_order_ref = assetMaintenanceRef();
 
     $asset_name = $asset['asset_name'] ?? '';
     $serial_number = $asset['serial_number'] ?? '';
@@ -143,14 +185,16 @@ if(isset($_POST['create_work_order'])){
             vendor_name,
             date_reported,
             expected_completion_date,
+            source_schedule_id,
+            work_order_ref,
             estimated_cost,
             status
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
 
     $stmt->bind_param(
-        "isssssssssssssds",
+        "isssssssssssssisds",
         $asset_id,
         $asset_name,
         $serial_number,
@@ -165,17 +209,30 @@ if(isset($_POST['create_work_order'])){
         $vendor_name,
         $date_reported,
         $expected_completion_date,
+        $source_schedule_id,
+        $work_order_ref,
         $estimated_cost,
         $status
     );
 
     if($stmt->execute()){
 
+        $newMaintenanceId = $stmt->insert_id;
+
         $conn->query("
             UPDATE assets
             SET status = 'Under Maintenance'
             WHERE id = $asset_id
         ");
+
+        if($source_schedule_id > 0){
+
+            $conn->query("
+                UPDATE asset_maintenance_schedule
+                SET last_work_order_id = $newMaintenanceId
+                WHERE id = $source_schedule_id
+            ");
+        }
 
         redirectSamePage("Maintenance work order created successfully.");
     }
@@ -253,13 +310,14 @@ if(isset($_POST['update_work_order'])){
     if($stmt->execute()){
 
         $assetRes = $conn->query("
-            SELECT asset_id
+            SELECT asset_id, source_schedule_id
             FROM asset_maintenance
             WHERE id = $id
         ");
 
         $assetRow = $assetRes->fetch_assoc();
         $asset_id = intval($assetRow['asset_id'] ?? 0);
+        $source_schedule_id = intval($assetRow['source_schedule_id'] ?? 0);
 
         if($asset_id > 0){
 
@@ -270,6 +328,17 @@ if(isset($_POST['update_work_order'])){
                     SET status = 'Operational'
                     WHERE id = $asset_id
                 ");
+
+                if($source_schedule_id > 0){
+
+                    $safeCompletionDate = $conn->real_escape_string($actual_completion_date ?: date('Y-m-d'));
+
+                    $conn->query("
+                        UPDATE asset_maintenance_schedule
+                        SET last_service_date = '$safeCompletionDate'
+                        WHERE id = $source_schedule_id
+                    ");
+                }
 
             }else if($status === 'In Progress'){
 
@@ -352,10 +421,14 @@ if(isset($_POST['create_schedule'])){
     $asset_name = $asset['asset_name'] ?? '';
     $serial_number = $asset['serial_number'] ?? '';
 
+    $maintenance_type = $_POST['schedule_maintenance_type'] ?? 'Preventive';
+    $priority = $_POST['schedule_priority'] ?? 'Medium';
     $frequency = $_POST['frequency'] ?? '';
     $last_service_date = $_POST['last_service_date'] ?? null;
     $next_service_date = $_POST['next_service_date'] ?? null;
     $assigned_to = $_POST['schedule_assigned_to'] ?? '';
+    $estimated_cost = floatval($_POST['schedule_estimated_cost'] ?? 0);
+    $work_scope = $_POST['schedule_work_scope'] ?? '';
     $notes = $_POST['schedule_notes'] ?? '';
     $status = $_POST['schedule_status'] ?? 'Active';
 
@@ -365,25 +438,33 @@ if(isset($_POST['create_schedule'])){
             asset_id,
             asset_name,
             serial_number,
+            maintenance_type,
+            priority,
             frequency,
             last_service_date,
             next_service_date,
             assigned_to,
+            estimated_cost,
+            work_scope,
             notes,
             status
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
 
     $stmt->bind_param(
-        "issssssss",
+        "issssssssdsss",
         $asset_id,
         $asset_name,
         $serial_number,
+        $maintenance_type,
+        $priority,
         $frequency,
         $last_service_date,
         $next_service_date,
         $assigned_to,
+        $estimated_cost,
+        $work_scope,
         $notes,
         $status
     );
@@ -391,6 +472,175 @@ if(isset($_POST['create_schedule'])){
     if($stmt->execute()){
 
         redirectSamePage("Preventive maintenance schedule created successfully.");
+    }
+
+    die($stmt->error);
+}
+
+/* =========================================================
+   UPDATE PREVENTIVE SCHEDULE
+========================================================= */
+
+if(isset($_POST['update_schedule'])){
+
+    $id = intval($_POST['schedule_id'] ?? 0);
+    $maintenance_type = $_POST['schedule_maintenance_type'] ?? 'Preventive';
+    $priority = $_POST['schedule_priority'] ?? 'Medium';
+    $frequency = $_POST['frequency'] ?? '';
+    $last_service_date = $_POST['last_service_date'] ?? null;
+    $next_service_date = $_POST['next_service_date'] ?? null;
+    $assigned_to = $_POST['schedule_assigned_to'] ?? '';
+    $estimated_cost = floatval($_POST['schedule_estimated_cost'] ?? 0);
+    $work_scope = $_POST['schedule_work_scope'] ?? '';
+    $notes = $_POST['schedule_notes'] ?? '';
+    $status = $_POST['schedule_status'] ?? 'Active';
+
+    $stmt = $conn->prepare("
+        UPDATE asset_maintenance_schedule
+        SET
+            maintenance_type = ?,
+            priority = ?,
+            frequency = ?,
+            last_service_date = ?,
+            next_service_date = ?,
+            assigned_to = ?,
+            estimated_cost = ?,
+            work_scope = ?,
+            notes = ?,
+            status = ?
+        WHERE id = ?
+    ");
+
+    $stmt->bind_param(
+        "ssssssdsssi",
+        $maintenance_type,
+        $priority,
+        $frequency,
+        $last_service_date,
+        $next_service_date,
+        $assigned_to,
+        $estimated_cost,
+        $work_scope,
+        $notes,
+        $status,
+        $id
+    );
+
+    if($stmt->execute()){
+
+        redirectSamePage("Preventive maintenance schedule updated successfully.");
+    }
+
+    die($stmt->error);
+}
+
+/* =========================================================
+   GENERATE WORK ORDER FROM SCHEDULE
+========================================================= */
+
+if(isset($_POST['generate_work_order'])){
+
+    $schedule_id = intval($_POST['schedule_id'] ?? 0);
+
+    $scheduleResult = $conn->query("
+        SELECT *
+        FROM asset_maintenance_schedule
+        WHERE id = $schedule_id
+        LIMIT 1
+    ");
+
+    $schedule = $scheduleResult ? $scheduleResult->fetch_assoc() : null;
+
+    if(!$schedule){
+
+        redirectSamePage("Schedule was not found.");
+    }
+
+    $asset = getAsset($conn, intval($schedule['asset_id']));
+    $asset_id = intval($schedule['asset_id']);
+    $asset_name = $asset['asset_name'] ?? ($schedule['asset_name'] ?? '');
+    $serial_number = $asset['serial_number'] ?? ($schedule['serial_number'] ?? '');
+    $model = $asset['model'] ?? '';
+    $asset_type = $asset['asset_type'] ?? '';
+    $location = $asset['location'] ?? '';
+    $work_order_ref = assetMaintenanceRef();
+    $maintenance_type = $schedule['maintenance_type'] ?? 'Preventive';
+    $issue_description = $schedule['work_scope'] ?: ($schedule['notes'] ?? 'Preventive maintenance generated from schedule.');
+    $priority = $schedule['priority'] ?? 'Medium';
+    $reported_by = 'Preventive Schedule';
+    $assigned_to = $schedule['assigned_to'] ?? '';
+    $vendor_name = '';
+    $date_reported = date('Y-m-d');
+    $expected_completion_date = $schedule['next_service_date'] ?? date('Y-m-d');
+    $estimated_cost = floatval($schedule['estimated_cost'] ?? 0);
+    $status = 'Pending';
+
+    $stmt = $conn->prepare("
+        INSERT INTO asset_maintenance
+        (
+            asset_id,
+            asset_name,
+            serial_number,
+            model,
+            asset_type,
+            location,
+            maintenance_type,
+            issue_description,
+            priority,
+            reported_by,
+            assigned_to,
+            vendor_name,
+            date_reported,
+            expected_completion_date,
+            source_schedule_id,
+            work_order_ref,
+            estimated_cost,
+            status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ");
+
+    $stmt->bind_param(
+        "isssssssssssssisds",
+        $asset_id,
+        $asset_name,
+        $serial_number,
+        $model,
+        $asset_type,
+        $location,
+        $maintenance_type,
+        $issue_description,
+        $priority,
+        $reported_by,
+        $assigned_to,
+        $vendor_name,
+        $date_reported,
+        $expected_completion_date,
+        $schedule_id,
+        $work_order_ref,
+        $estimated_cost,
+        $status
+    );
+
+    if($stmt->execute()){
+
+        $newMaintenanceId = $stmt->insert_id;
+
+        $conn->query("
+            UPDATE asset_maintenance_schedule
+            SET
+                last_work_order_id = $newMaintenanceId,
+                last_service_date = IFNULL(last_service_date, CURDATE())
+            WHERE id = $schedule_id
+        ");
+
+        $conn->query("
+            UPDATE assets
+            SET status = 'Under Maintenance'
+            WHERE id = $asset_id
+        ");
+
+        redirectSamePage("Work order generated from preventive schedule.");
     }
 
     die($stmt->error);
@@ -976,24 +1226,24 @@ Manage asset repairs, preventive maintenance, work orders, costs, downtime, part
 
 <div class="top-action-bar">
 
-<button class="primary-btn" onclick="openModal('workOrderModal')">
-+ New Work Order
-</button>
-
 <button class="green-btn" onclick="openModal('scheduleModal')">
 + Preventive Schedule
+</button>
+
+<button class="primary-btn" onclick="openModal('workOrderModal')">
++ New Work Order
 </button>
 
 </div>
 
 <div class="tab-bar">
 
-<button class="tab-btn active" onclick="openTab(event,'workOrdersTab')">
-Work Orders
+<button class="tab-btn active" onclick="openTab(event,'scheduleTab')">
+Preventive Schedule
 </button>
 
-<button class="tab-btn" onclick="openTab(event,'scheduleTab')">
-Preventive Schedule
+<button class="tab-btn" onclick="openTab(event,'workOrdersTab')">
+Work Orders
 </button>
 
 <button class="tab-btn" onclick="openTab(event,'historyTab')">
@@ -1008,7 +1258,7 @@ Reports
 
 <!-- WORK ORDERS -->
 
-<div id="workOrdersTab" class="tab-section active">
+<div id="workOrdersTab" class="tab-section">
 
 <div class="card">
 
@@ -1103,7 +1353,7 @@ if($wo['priority'] === 'Critical') $statusClass .= ' status-critical';
 
 <!-- SCHEDULE -->
 
-<div id="scheduleTab" class="tab-section">
+<div id="scheduleTab" class="tab-section active">
 
 <div class="card">
 
@@ -1112,9 +1362,11 @@ if($wo['priority'] === 'Critical') $statusClass .= ' status-critical';
 <thead>
 <tr>
 <th>Asset</th>
+<th>Maintenance Plan</th>
 <th>Frequency</th>
 <th>Service Dates</th>
 <th>Status</th>
+<th>Action</th>
 </tr>
 </thead>
 
@@ -1131,6 +1383,12 @@ if($wo['priority'] === 'Critical') $statusClass .= ' status-critical';
 </td>
 
 <td>
+<div class="detail-main"><?= htmlspecialchars($sc['maintenance_type'] ?? 'Preventive'); ?></div>
+<div class="detail-sub">Priority: <?= htmlspecialchars($sc['priority'] ?? 'Medium'); ?></div>
+<div class="detail-sub">Est: KES <?= number_format((float)($sc['estimated_cost'] ?? 0)); ?></div>
+</td>
+
+<td>
 <?= htmlspecialchars($sc['frequency']); ?>
 </td>
 
@@ -1143,6 +1401,31 @@ if($wo['priority'] === 'Critical') $statusClass .= ' status-critical';
 <span class="status-badge">
 <?= htmlspecialchars($sc['status']); ?>
 </span>
+</td>
+
+<td>
+
+<div class="action-wrapper">
+
+<button class="action-btn" onclick="toggleMenu(this)">...</button>
+
+<div class="action-menu">
+
+<button type="button" onclick='openEditSchedule(<?= htmlspecialchars(json_encode($sc), ENT_QUOTES, "UTF-8"); ?>)'>
+Edit Schedule
+</button>
+
+<form method="POST" onsubmit="return confirm('Create a work order from this preventive schedule?');">
+<input type="hidden" name="schedule_id" value="<?= (int)$sc['id']; ?>">
+<button type="submit" name="generate_work_order">
+Create Work Order
+</button>
+</form>
+
+</div>
+
+</div>
+
 </td>
 
 </tr>
@@ -1180,6 +1463,7 @@ if($wo['priority'] === 'Critical') $statusClass .= ' status-critical';
 $history = $conn->query("
     SELECT *
     FROM asset_maintenance
+    WHERE status IN ('Completed','Cancelled')
     ORDER BY asset_name ASC, date_reported DESC
 ");
 ?>
@@ -1306,6 +1590,8 @@ $costReport = $conn->query("
 <div class="modal-body">
 
 <form method="POST">
+
+<input type="hidden" name="source_schedule_id" id="source_schedule_id" value="0">
 
 <div class="form-grid">
 
@@ -1621,6 +1907,26 @@ Add Part
 </div>
 
 <div class="form-group">
+<label>Maintenance Type</label>
+<select name="schedule_maintenance_type" required>
+<option value="Preventive">Preventive</option>
+<option value="Inspection">Inspection</option>
+<option value="Calibration">Calibration</option>
+<option value="Servicing">Servicing</option>
+</select>
+</div>
+
+<div class="form-group">
+<label>Priority</label>
+<select name="schedule_priority" required>
+<option value="Low">Low</option>
+<option value="Medium">Medium</option>
+<option value="High">High</option>
+<option value="Critical">Critical</option>
+</select>
+</div>
+
+<div class="form-group">
 <label>Frequency</label>
 <select name="frequency" required>
 <option value="Weekly">Weekly</option>
@@ -1647,12 +1953,22 @@ Add Part
 </div>
 
 <div class="form-group">
+<label>Estimated Cost</label>
+<input type="number" step="0.01" name="schedule_estimated_cost">
+</div>
+
+<div class="form-group">
 <label>Status</label>
 <select name="schedule_status">
 <option value="Active">Active</option>
 <option value="Paused">Paused</option>
 <option value="Closed">Closed</option>
 </select>
+</div>
+
+<div class="form-group full">
+<label>Work Scope</label>
+<textarea name="schedule_work_scope" placeholder="Describe the preventive work, inspection checks, source changes, calibration or service activity."></textarea>
 </div>
 
 <div class="form-group full">
@@ -1663,6 +1979,111 @@ Add Part
 <div class="form-group full">
 <button type="submit" name="create_schedule" class="submit-btn">
 Create Schedule
+</button>
+</div>
+
+</div>
+
+</form>
+
+</div>
+
+</div>
+
+</div>
+
+<!-- EDIT SCHEDULE MODAL -->
+
+<div id="editScheduleModal" class="modal">
+
+<div class="modal-content">
+
+<div class="modal-header">
+<h3>Edit Preventive Maintenance Schedule</h3>
+<button class="close-modal" onclick="closeModal('editScheduleModal')">×</button>
+</div>
+
+<div class="modal-body">
+
+<form method="POST">
+
+<input type="hidden" name="schedule_id" id="edit_schedule_id">
+
+<div class="form-grid">
+
+<div class="form-group">
+<label>Maintenance Type</label>
+<select name="schedule_maintenance_type" id="edit_schedule_maintenance_type">
+<option value="Preventive">Preventive</option>
+<option value="Inspection">Inspection</option>
+<option value="Calibration">Calibration</option>
+<option value="Servicing">Servicing</option>
+</select>
+</div>
+
+<div class="form-group">
+<label>Priority</label>
+<select name="schedule_priority" id="edit_schedule_priority">
+<option value="Low">Low</option>
+<option value="Medium">Medium</option>
+<option value="High">High</option>
+<option value="Critical">Critical</option>
+</select>
+</div>
+
+<div class="form-group">
+<label>Frequency</label>
+<select name="frequency" id="edit_schedule_frequency">
+<option value="Weekly">Weekly</option>
+<option value="Monthly">Monthly</option>
+<option value="Quarterly">Quarterly</option>
+<option value="Bi-Annually">Bi-Annually</option>
+<option value="Yearly">Yearly</option>
+</select>
+</div>
+
+<div class="form-group">
+<label>Last Service Date</label>
+<input type="date" name="last_service_date" id="edit_schedule_last_service_date">
+</div>
+
+<div class="form-group">
+<label>Next Service Date</label>
+<input type="date" name="next_service_date" id="edit_schedule_next_service_date" required>
+</div>
+
+<div class="form-group">
+<label>Assigned To</label>
+<input type="text" name="schedule_assigned_to" id="edit_schedule_assigned_to">
+</div>
+
+<div class="form-group">
+<label>Estimated Cost</label>
+<input type="number" step="0.01" name="schedule_estimated_cost" id="edit_schedule_estimated_cost">
+</div>
+
+<div class="form-group">
+<label>Status</label>
+<select name="schedule_status" id="edit_schedule_status">
+<option value="Active">Active</option>
+<option value="Paused">Paused</option>
+<option value="Closed">Closed</option>
+</select>
+</div>
+
+<div class="form-group full">
+<label>Work Scope</label>
+<textarea name="schedule_work_scope" id="edit_schedule_work_scope"></textarea>
+</div>
+
+<div class="form-group full">
+<label>Notes</label>
+<textarea name="schedule_notes" id="edit_schedule_notes"></textarea>
+</div>
+
+<div class="form-group full">
+<button type="submit" name="update_schedule" class="submit-btn">
+Save Schedule Changes
 </button>
 </div>
 
@@ -1805,6 +2226,25 @@ function openEditWorkOrder(data){
     document.getElementById('edit_resolution_notes').value = data.resolution_notes || '';
 
     openModal('editWorkOrderModal');
+}
+
+function openEditSchedule(data){
+
+    document.getElementById('edit_schedule_id').value = data.id || '';
+
+    setSelectValue('edit_schedule_maintenance_type', data.maintenance_type || 'Preventive');
+    setSelectValue('edit_schedule_priority', data.priority || 'Medium');
+    setSelectValue('edit_schedule_frequency', data.frequency || '');
+    setSelectValue('edit_schedule_status', data.status || 'Active');
+
+    document.getElementById('edit_schedule_last_service_date').value = data.last_service_date || '';
+    document.getElementById('edit_schedule_next_service_date').value = data.next_service_date || '';
+    document.getElementById('edit_schedule_assigned_to').value = data.assigned_to || '';
+    document.getElementById('edit_schedule_estimated_cost').value = data.estimated_cost || 0;
+    document.getElementById('edit_schedule_work_scope').value = data.work_scope || '';
+    document.getElementById('edit_schedule_notes').value = data.notes || '';
+
+    openModal('editScheduleModal');
 }
 
 window.onclick = function(e){

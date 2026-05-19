@@ -460,6 +460,18 @@ $types = $typeCol
 
         <div class="table-panel">
 
+            <div class="report-topic no-print">
+
+                <h3 id="meteringReportTitle">
+                    WOWASCO Metering Report
+                </h3>
+
+                <p id="meteringReportSummary">
+                    Filtered metering records.
+                </p>
+
+            </div>
+
             <!-- =========================================
                  TOOLBAR
             ========================================= -->
@@ -650,6 +662,25 @@ $types = $typeCol
     overflow-x:auto;
 }
 
+.report-topic{
+    border-bottom:1px solid var(--border);
+    margin-bottom:14px;
+    padding-bottom:12px;
+}
+
+.report-topic h3{
+    margin:0;
+    color:var(--primary);
+    font-size:17px;
+}
+
+.report-topic p{
+    margin:5px 0 0;
+    color:#64748b;
+    font-size:12px;
+    line-height:1.5;
+}
+
 .table-toolbar{
     display:flex;
     justify-content:space-between;
@@ -755,7 +786,7 @@ tbody tr:hover{
     justify-content:space-between;
     gap:14px;
     flex-wrap:wrap;
-    margin:18px 0 24px;
+    margin:22px 0 34px;
     width:100%;
 }
 
@@ -789,6 +820,11 @@ tbody tr:hover{
     float:none !important;
     margin:0 !important;
     width:auto !important;
+}
+
+.dt-container .dt-length,
+.dataTables_wrapper .dataTables_length{
+    margin-bottom:22px !important;
 }
 
 .dt-container .dt-search,
@@ -901,6 +937,9 @@ function getDynamicTitle(){
     const zone = $('select[name="zone"]').val();
     const status = $('select[name="status"]').val();
     const type = $('select[name="type"]').val();
+    const from = $('input[name="from"]').val();
+    const to = $('input[name="to"]').val();
+    const search = $('input[name="search"]').val();
 
     if(zone){
         title += ' - Zone ' + zone;
@@ -912,6 +951,14 @@ function getDynamicTitle(){
 
     if(type){
         title += ' - Type ' + type;
+    }
+
+    if(from || to){
+        title += ' - Period ' + (from || 'Start') + ' to ' + (to || 'Today');
+    }
+
+    if(search){
+        title += ' - Search ' + search;
     }
 
     return title;
@@ -1043,6 +1090,9 @@ $(document).ready(function(){
 
     });
 
+    $('#meteringReportTitle').text(getDynamicTitle());
+    $('#meteringReportSummary').html(getFilterSummary().replace(/\n/g, '<br>'));
+
 });
 
 function triggerExport(type){
@@ -1138,7 +1188,7 @@ function printFilteredReport(){
 
         <head>
 
-            <title>Metering Report</title>
+            <title>${getDynamicTitle()}</title>
 
             <style>
 
@@ -1146,6 +1196,24 @@ function printFilteredReport(){
                     font-family:Arial,sans-serif;
                     padding:20px;
                     color:#1f2937;
+                }
+
+                .report-title{
+                    border-bottom:2px solid #0a2a43;
+                    padding-bottom:10px;
+                    margin-bottom:15px;
+                }
+
+                .report-title h3{
+                    margin:0 0 6px;
+                    color:#0a2a43;
+                }
+
+                .report-title p{
+                    margin:3px 0;
+                    color:#475569;
+                    font-size:12px;
+                    line-height:1.5;
                 }
 
                 table{
@@ -1175,6 +1243,11 @@ function printFilteredReport(){
         </head>
 
         <body>
+
+            <div class="report-title">
+                <h3>${getDynamicTitle()}</h3>
+                <p>${getFilterSummary().replace(/\n/g, '<br>')}</p>
+            </div>
 
             ${tableHtml}
 
