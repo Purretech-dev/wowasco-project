@@ -141,6 +141,163 @@ function getAsset($conn, $asset_id){
 }
 
 /* =========================================================
+   DUPLICATE PROTECTION
+========================================================= */
+
+function duplicateScheduleExists($conn, $assetId, $maintenanceType, $frequency, $nextServiceDate, $excludeId = 0){
+
+    $assetId = intval($assetId);
+    $maintenanceType = strtolower(trim((string)$maintenanceType));
+    $frequency = strtolower(trim((string)$frequency));
+    $nextServiceDate = trim((string)$nextServiceDate);
+
+    if($assetId <= 0 || $maintenanceType === '' || $frequency === '' || $nextServiceDate === ''){
+
+        return false;
+    }
+
+    $sql = "
+        SELECT id
+        FROM asset_maintenance_schedule
+        WHERE asset_id = ?
+        AND LOWER(TRIM(IFNULL(maintenance_type,''))) = ?
+        AND LOWER(TRIM(IFNULL(frequency,''))) = ?
+        AND DATE(next_service_date) = ?
+        AND status NOT IN ('Closed','Cancelled')
+    ";
+
+    if($excludeId > 0){
+
+        $sql .= " AND id <> ?";
+    }
+
+    $sql .= " LIMIT 1";
+
+    $stmt = $conn->prepare($sql);
+
+    if(!$stmt){
+
+        return false;
+    }
+
+    if($excludeId > 0){
+
+        $stmt->bind_param("isssi", $assetId, $maintenanceType, $frequency, $nextServiceDate, $excludeId);
+
+    }else{
+
+        $stmt->bind_param("isss", $assetId, $maintenanceType, $frequency, $nextServiceDate);
+    }
+
+    $stmt->execute();
+
+    return $stmt->get_result()->num_rows > 0;
+}
+
+function duplicateWorkOrderExists($conn, $assetId, $maintenanceType, $expectedDate, $issueDescription, $excludeId = 0, $sourceScheduleId = 0){
+
+    $assetId = intval($assetId);
+    $sourceScheduleId = intval($sourceScheduleId);
+    $maintenanceType = strtolower(trim((string)$maintenanceType));
+    $expectedDate = trim((string)$expectedDate);
+    $issueDescription = strtolower(trim((string)$issueDescription));
+
+    if($sourceScheduleId > 0){
+
+        $sql = "
+            SELECT id
+            FROM asset_maintenance
+            WHERE source_schedule_id = ?
+            AND status NOT IN ('Completed','Cancelled')
+        ";
+
+        if($excludeId > 0){
+
+            $sql .= " AND id <> ?";
+        }
+
+        $sql .= " LIMIT 1";
+
+        $stmt = $conn->prepare($sql);
+
+        if(!$stmt){
+
+            return false;
+        }
+
+        if($excludeId > 0){
+
+            $stmt->bind_param("ii", $sourceScheduleId, $excludeId);
+
+        }else{
+
+            $stmt->bind_param("i", $sourceScheduleId);
+        }
+
+        $stmt->execute();
+
+        if($stmt->get_result()->num_rows > 0){
+
+            return true;
+        }
+    }
+
+    if($assetId <= 0 || $maintenanceType === '' || $expectedDate === ''){
+
+        return false;
+    }
+
+    $sql = "
+        SELECT id
+        FROM asset_maintenance
+        WHERE asset_id = ?
+        AND LOWER(TRIM(IFNULL(maintenance_type,''))) = ?
+        AND DATE(expected_completion_date) = ?
+        AND status NOT IN ('Completed','Cancelled')
+    ";
+
+    if($issueDescription !== ''){
+
+        $sql .= " AND LOWER(TRIM(IFNULL(issue_description,''))) = ?";
+    }
+
+    if($excludeId > 0){
+
+        $sql .= " AND id <> ?";
+    }
+
+    $sql .= " LIMIT 1";
+
+    $stmt = $conn->prepare($sql);
+
+    if(!$stmt){
+
+        return false;
+    }
+
+    if($issueDescription !== '' && $excludeId > 0){
+
+        $stmt->bind_param("isssi", $assetId, $maintenanceType, $expectedDate, $issueDescription, $excludeId);
+
+    }elseif($issueDescription !== ''){
+
+        $stmt->bind_param("isss", $assetId, $maintenanceType, $expectedDate, $issueDescription);
+
+    }elseif($excludeId > 0){
+
+        $stmt->bind_param("issi", $assetId, $maintenanceType, $expectedDate, $excludeId);
+
+    }else{
+
+        $stmt->bind_param("iss", $assetId, $maintenanceType, $expectedDate);
+    }
+
+    $stmt->execute();
+
+    return $stmt->get_result()->num_rows > 0;
+}
+
+/* =========================================================
    CREATE WORK ORDER
 ========================================================= */
 
@@ -167,6 +324,11 @@ if(isset($_POST['create_work_order'])){
     $expected_completion_date = $_POST['expected_completion_date'] ?? null;
     $estimated_cost = floatval($_POST['estimated_cost'] ?? 0);
     $status = $_POST['status'] ?? 'Pending';
+
+    if(duplicateWorkOrderExists($conn, $asset_id, $maintenance_type, $expected_completion_date, $issue_description, 0, $source_schedule_id)){
+
+        redirectSamePage("Duplicate work order blocked. A similar active work order already exists for this asset.");
+    }
 
     $stmt = $conn->prepare("
         INSERT INTO asset_maintenance
@@ -265,6 +427,22 @@ if(isset($_POST['update_work_order'])){
     $downtime_hours = floatval($_POST['downtime_hours'] ?? 0);
     $status = $_POST['status'] ?? 'Pending';
     $resolution_notes = $_POST['resolution_notes'] ?? '';
+
+    $currentWorkOrder = $conn->query("
+        SELECT asset_id, source_schedule_id
+        FROM asset_maintenance
+        WHERE id = $id
+        LIMIT 1
+    ");
+
+    $currentWorkOrderRow = $currentWorkOrder ? $currentWorkOrder->fetch_assoc() : [];
+    $currentAssetId = intval($currentWorkOrderRow['asset_id'] ?? 0);
+    $currentSourceScheduleId = intval($currentWorkOrderRow['source_schedule_id'] ?? 0);
+
+    if($status !== 'Completed' && $status !== 'Cancelled' && duplicateWorkOrderExists($conn, $currentAssetId, $maintenance_type, $expected_completion_date, $issue_description, $id, $currentSourceScheduleId)){
+
+        redirectSamePage("Update blocked. A similar active work order already exists for this asset.");
+    }
 
     $stmt = $conn->prepare("
         UPDATE asset_maintenance
@@ -432,6 +610,11 @@ if(isset($_POST['create_schedule'])){
     $notes = $_POST['schedule_notes'] ?? '';
     $status = $_POST['schedule_status'] ?? 'Active';
 
+    if($status !== 'Closed' && duplicateScheduleExists($conn, $asset_id, $maintenance_type, $frequency, $next_service_date)){
+
+        redirectSamePage("Duplicate schedule blocked. This asset already has a similar active preventive schedule.");
+    }
+
     $stmt = $conn->prepare("
         INSERT INTO asset_maintenance_schedule
         (
@@ -494,6 +677,21 @@ if(isset($_POST['update_schedule'])){
     $work_scope = $_POST['schedule_work_scope'] ?? '';
     $notes = $_POST['schedule_notes'] ?? '';
     $status = $_POST['schedule_status'] ?? 'Active';
+
+    $scheduleAssetResult = $conn->query("
+        SELECT asset_id
+        FROM asset_maintenance_schedule
+        WHERE id = $id
+        LIMIT 1
+    ");
+
+    $scheduleAssetRow = $scheduleAssetResult ? $scheduleAssetResult->fetch_assoc() : [];
+    $scheduleAssetId = intval($scheduleAssetRow['asset_id'] ?? 0);
+
+    if($status !== 'Closed' && $status !== 'Cancelled' && duplicateScheduleExists($conn, $scheduleAssetId, $maintenance_type, $frequency, $next_service_date, $id)){
+
+        redirectSamePage("Update blocked. This asset already has a similar active preventive schedule.");
+    }
 
     $stmt = $conn->prepare("
         UPDATE asset_maintenance_schedule
@@ -574,6 +772,11 @@ if(isset($_POST['generate_work_order'])){
     $expected_completion_date = $schedule['next_service_date'] ?? date('Y-m-d');
     $estimated_cost = floatval($schedule['estimated_cost'] ?? 0);
     $status = 'Pending';
+
+    if(duplicateWorkOrderExists($conn, $asset_id, $maintenance_type, $expected_completion_date, $issue_description, 0, $schedule_id)){
+
+        redirectSamePage("Duplicate work order blocked. This preventive schedule already has an active work order.");
+    }
 
     $stmt = $conn->prepare("
         INSERT INTO asset_maintenance
@@ -767,48 +970,11 @@ body{
     color:#64748b;
 }
 
-.cards{
-    display:grid;
-    grid-template-columns:repeat(4,1fr);
-    gap:16px;
-    margin-bottom:22px;
-}
-
-.summary-card{
-    background:white;
-    border-radius:20px;
-    padding:18px;
-    box-shadow:0 6px 18px rgba(15,23,42,0.05);
-    border-left:5px solid #1e7d4f;
-}
-
-.summary-card.blue{
-    border-left-color:#1e3a8a;
-}
-
-.summary-card.yellow{
-    border-left-color:#f4c430;
-}
-
-.summary-title{
-    font-size:12px;
-    color:#64748b;
-    text-transform:uppercase;
-    font-weight:700;
-}
-
-.summary-value{
-    font-size:25px;
-    font-weight:800;
-    margin-top:7px;
-    color:#0f172a;
-}
-
 .card{
-    background:white;
-    border-radius:24px;
-    padding:24px;
-    box-shadow:0 6px 18px rgba(15,23,42,0.05);
+    background:transparent;
+    border-radius:0;
+    padding:0;
+    box-shadow:none;
     margin-bottom:22px;
     overflow:visible !important;
 }
@@ -831,7 +997,7 @@ body{
 }
 
 .green-btn{
-    background:linear-gradient(135deg,#1e7d4f,#249c63);
+    background:linear-gradient(135deg,#0f172a,#1e3a8a);
     color:white;
     border:none;
     padding:12px 18px;
@@ -871,8 +1037,8 @@ body{
 }
 
 .status-badge{
-    background:#dcfce7;
-    color:#15803d;
+    background:#eff6ff;
+    color:#1e3a8a;
     padding:7px 13px;
     border-radius:30px;
     font-size:12px;
@@ -890,8 +1056,8 @@ body{
 }
 
 .status-completed{
-    background:#dcfce7;
-    color:#15803d;
+    background:#e0f2fe;
+    color:#075985;
 }
 
 .status-critical{
@@ -1008,6 +1174,9 @@ body{
 table.dataTable{
     overflow:visible !important;
     position:relative;
+    background:#ffffff;
+    border:1px solid #e2e8f0;
+    border-radius:12px;
 }
 
 table.dataTable tbody{
@@ -1116,7 +1285,7 @@ th:last-child{
 }
 
 .submit-btn{
-    background:linear-gradient(135deg,#1e7d4f,#249c63);
+    background:linear-gradient(135deg,#0f172a,#1e3a8a);
     color:white;
     border:none;
     padding:14px;
@@ -1141,20 +1310,18 @@ th:last-child{
 .report-grid{
     display:grid;
     grid-template-columns:1fr 1fr;
-    gap:20px;
+    gap:14px;
+    margin-bottom:18px;
 }
 
 .report-box{
-    background:#f8fafc;
-    border-radius:16px;
-    padding:18px;
+    background:transparent;
+    border-left:4px solid #1e3a8a;
+    padding:0 0 0 14px;
+    border-radius:0;
 }
 
 @media(max-width:1000px){
-    .cards{
-        grid-template-columns:repeat(2,1fr);
-    }
-
     .form-grid,
     .report-grid{
         grid-template-columns:1fr;
@@ -1177,50 +1344,6 @@ Assets Maintenance
 <p class="page-subtitle">
 Manage asset repairs, preventive maintenance, work orders, costs, downtime, parts, schedules and history.
 </p>
-
-</div>
-
-<div class="cards">
-
-<div class="summary-card blue">
-<div class="summary-title">Total Work Orders</div>
-<div class="summary-value"><?= $totalOrders; ?></div>
-</div>
-
-<div class="summary-card yellow">
-<div class="summary-title">Pending</div>
-<div class="summary-value"><?= $pendingOrders; ?></div>
-</div>
-
-<div class="summary-card blue">
-<div class="summary-title">In Progress</div>
-<div class="summary-value"><?= $inProgressOrders; ?></div>
-</div>
-
-<div class="summary-card">
-<div class="summary-title">Completed</div>
-<div class="summary-value"><?= $completedOrders; ?></div>
-</div>
-
-<div class="summary-card yellow">
-<div class="summary-title">Overdue Jobs</div>
-<div class="summary-value"><?= $overdueOrders; ?></div>
-</div>
-
-<div class="summary-card blue">
-<div class="summary-title">Upcoming PM</div>
-<div class="summary-value"><?= $upcomingSchedules; ?></div>
-</div>
-
-<div class="summary-card yellow">
-<div class="summary-title">Overdue PM</div>
-<div class="summary-value"><?= $overdueSchedules; ?></div>
-</div>
-
-<div class="summary-card">
-<div class="summary-title">Total Cost</div>
-<div class="summary-value">KES <?= number_format($totalCost); ?></div>
-</div>
 
 </div>
 

@@ -133,12 +133,13 @@ if(isset($_POST['register_meter'])){
     $customer_phone = $_POST['customer_phone'];
     $alternative_phone = $_POST['alternative_phone'];
 
-    /* CHECK EXISTING SERIAL */
+    /* BLOCK SERIALS THAT HAVE ALREADY BEEN REGISTERED */
 
     $check = $conn->prepare("
         SELECT id
         FROM meters
-        WHERE serial_number = ?
+        WHERE LOWER(TRIM(serial_number)) = LOWER(TRIM(?))
+        LIMIT 1
     ");
 
     $check->bind_param("s", $serial_number);
@@ -147,156 +148,72 @@ if(isset($_POST['register_meter'])){
 
     if($check->num_rows > 0){
 
-        $stmt = $conn->prepare("
-            UPDATE meters
-            SET
-                model = ?,
-                meter_type = ?,
-                installation_date = ?,
-                customer_name = ?,
-                customer_type = ?,
-                zone = ?,
-                national_id = ?,
-                customer_phone = ?,
-                alternative_phone = ?,
-                is_deactivated = 0
-            WHERE serial_number = ?
-        ");
+        echo "
+        <script>
+        alert('This meter serial has already been registered and cannot be used again.');
+        window.location.href = window.location.pathname + window.location.search;
+        </script>
+        ";
 
-        $stmt->bind_param(
-            "ssssssssss",
-            $model,
-            $meter_type,
-            $installation_date,
-            $customer_name,
-            $customer_type,
-            $zone,
-            $national_id,
-            $customer_phone,
-            $alternative_phone,
-            $serial_number
-        );
+        exit;
+    }
 
-        if($stmt->execute()){
+    $stmt = $conn->prepare("
+        INSERT INTO meters
+        (
+            serial_number,
+            model,
+            meter_type,
+            installation_date,
+            customer_name,
+            customer_type,
+            zone,
+            national_id,
+            customer_phone,
+            alternative_phone
+        )
+        VALUES
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ");
 
-            echo "
-            <script>
-            alert('Assigned meter record updated successfully.');
-            window.location.href =
-            window.location.pathname +
-            window.location.search;
-            </script>
-            ";
+    $stmt->bind_param(
+        "ssssssssss",
+        $serial_number,
+        $model,
+        $meter_type,
+        $installation_date,
+        $customer_name,
+        $customer_type,
+        $zone,
+        $national_id,
+        $customer_phone,
+        $alternative_phone
+    );
 
-            exit;
-        }
-
-        else {
+    if($stmt->execute()){
 
         echo "
         <script>
-        alert('Meter serial already exists, but the record could not be updated.');
+
+        alert('Meter registered successfully.');
+
+        window.location.href =
+        window.location.pathname +
+        window.location.search;
+
         </script>
         ";
-        }
+
+        exit;
     }
 
     else {
 
-        $stmt = $conn->prepare("
-            INSERT INTO meters
-            (
-                serial_number,
-                model,
-                meter_type,
-                installation_date,
-                customer_name,
-                customer_type,
-                zone,
-                national_id,
-                customer_phone,
-                alternative_phone
-            )
-            VALUES
-            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ");
-
-        $stmt->bind_param(
-            "ssssssssss",
-            $serial_number,
-            $model,
-            $meter_type,
-            $installation_date,
-            $customer_name,
-            $customer_type,
-            $zone,
-            $national_id,
-            $customer_phone,
-            $alternative_phone
-        );
-
-        if($stmt->execute()){
-
-            echo "
-            <script>
-
-            alert('Meter registered successfully.');
-
-            window.location.href =
-            window.location.pathname +
-            window.location.search;
-
-            </script>
-            ";
-
-            exit;
-        }
-
-        else {
-
-            echo "
-            <script>
-            alert('Error registering meter.');
-            </script>
-            ";
-        }
-    }
-}
-
-/* =========================================================
-   FETCH ASSIGNED APPLICATION SERIALS FOR REGISTER DROPDOWN
-========================================================= */
-
-$assignedMeterApplications = [];
-
-if (
-    tableExists($conn, 'meter_applications') &&
-    columnExists($conn, 'meter_applications', 'serial_number')
-) {
-    $assignedSql = "
-        SELECT
-            ma.id,
-            ma.application_ref,
-            ma.customer_name,
-            ma.contact,
-            ma.id_number,
-            ma.zone,
-            ma.meter_type,
-            ma.customer_type,
-            ma.serial_number,
-            ma.installation_date
-        FROM meter_applications ma
-        WHERE ma.serial_number IS NOT NULL
-        AND ma.serial_number != ''
-        ORDER BY ma.id DESC
-    ";
-
-    $assignedResult = $conn->query($assignedSql);
-
-    if ($assignedResult) {
-        while ($assigned = $assignedResult->fetch_assoc()) {
-            $assignedMeterApplications[] = $assigned;
-        }
+        echo "
+        <script>
+        alert('Error registering meter.');
+        </script>
+        ";
     }
 }
 
@@ -1355,47 +1272,14 @@ onclick="closeRegisterModal()">
 
 <label>Meter Serial</label>
 
-<select
+<input
+type="text"
 name="serial_number"
 id="register_serial_number"
-onchange="fillAssignedMeterDetails(this)"
+placeholder="Enter meter serial number"
 required>
 
-<option value="">
--- Select Assigned Meter Serial --
-</option>
 
-<?php if (!empty($assignedMeterApplications)): ?>
-
-<?php foreach ($assignedMeterApplications as $application): ?>
-
-<option
-value="<?= clean($application['serial_number']) ?>"
-data-customer-name="<?= clean($application['customer_name']) ?>"
-data-national-id="<?= clean($application['id_number']) ?>"
-data-phone="<?= clean($application['contact']) ?>"
-data-customer-type="<?= clean($application['customer_type']) ?>"
-data-meter-type="<?= clean($application['meter_type']) ?>"
-data-zone="<?= clean($application['zone']) ?>"
-data-installation-date="<?= clean($application['installation_date']) ?>">
-<?= clean($application['serial_number']) ?> - <?= clean($application['customer_name']) ?>
-</option>
-
-<?php endforeach; ?>
-
-<?php else: ?>
-
-<option value="" disabled>
-No assigned meter serials available
-</option>
-
-<?php endif; ?>
-
-</select>
-
-<small class="field-hint">
-Only serials assigned in Customer Management appear here.
-</small>
 
 </div>
 
@@ -1580,71 +1464,6 @@ Register Meter
 <script src="https://cdn.datatables.net/responsive/3.0.3/js/dataTables.responsive.min.js"></script>
 
 <script>
-
-/* =========================================================
-   ASSIGNED METER APPLICATION DROPDOWN
-========================================================= */
-
-function setRegisterSelectValue(id, value){
-
-    const select = document.getElementById(id);
-
-    if(!select){
-
-        return;
-    }
-
-    value = value || '';
-
-    if(value && !Array.from(select.options).some(option => option.value === value || option.text === value)){
-
-        const option = document.createElement('option');
-
-        option.value = value;
-        option.text = value;
-
-        select.appendChild(option);
-    }
-
-    select.value = value;
-}
-
-function fillAssignedMeterDetails(select){
-
-    const option = select.options[select.selectedIndex];
-
-    if(!option || !option.value){
-
-        return;
-    }
-
-    document.getElementById('register_customer_name').value =
-    option.dataset.customerName || '';
-
-    document.getElementById('register_national_id').value =
-    option.dataset.nationalId || '';
-
-    document.getElementById('register_customer_phone').value =
-    option.dataset.phone || '';
-
-    setRegisterSelectValue(
-        'register_customer_type',
-        option.dataset.customerType || ''
-    );
-
-    setRegisterSelectValue(
-        'register_meter_type',
-        option.dataset.meterType || ''
-    );
-
-    setRegisterSelectValue(
-        'register_zone',
-        option.dataset.zone || ''
-    );
-
-    document.getElementById('register_installation_date').value =
-    option.dataset.installationDate || '';
-}
 
 /* =========================================================
    DATATABLE

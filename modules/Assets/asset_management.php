@@ -49,6 +49,163 @@ ensureColumn($conn, 'assets', 'date_purchased', 'DATE NULL');
 ensureColumn($conn, 'assets', 'status', 'VARCHAR(100) NULL');
 
 /* =========================================================
+   DUPLICATE PROTECTION
+========================================================= */
+
+function duplicateAssetExists($conn, $field, $value, $excludeId = 0){
+
+    $value = strtolower(trim((string)$value));
+
+    if($value === ''){
+
+        return false;
+    }
+
+    $sql = "
+        SELECT id
+        FROM assets
+        WHERE LOWER(TRIM(IFNULL(`$field`,''))) = ?
+    ";
+
+    if($excludeId > 0){
+
+        $sql .= " AND id <> ?";
+    }
+
+    $sql .= " LIMIT 1";
+
+    $stmt = $conn->prepare($sql);
+
+    if(!$stmt){
+
+        return false;
+    }
+
+    if($excludeId > 0){
+
+        $stmt->bind_param("si", $value, $excludeId);
+
+    }else{
+
+        $stmt->bind_param("s", $value);
+    }
+
+    $stmt->execute();
+
+    return $stmt->get_result()->num_rows > 0;
+}
+
+function duplicateAssetProfileExists($conn, $assetName, $model, $assetType, $location, $excludeId = 0){
+
+    $assetName = strtolower(trim((string)$assetName));
+    $model = strtolower(trim((string)$model));
+    $assetType = strtolower(trim((string)$assetType));
+    $location = strtolower(trim((string)$location));
+
+    if($assetName === '' || $assetType === '' || $location === ''){
+
+        return false;
+    }
+
+    $sql = "
+        SELECT id
+        FROM assets
+        WHERE LOWER(TRIM(IFNULL(asset_name,''))) = ?
+        AND LOWER(TRIM(IFNULL(model,''))) = ?
+        AND LOWER(TRIM(IFNULL(asset_type,''))) = ?
+        AND LOWER(TRIM(IFNULL(location,''))) = ?
+    ";
+
+    if($excludeId > 0){
+
+        $sql .= " AND id <> ?";
+    }
+
+    $sql .= " LIMIT 1";
+
+    $stmt = $conn->prepare($sql);
+
+    if(!$stmt){
+
+        return false;
+    }
+
+    if($excludeId > 0){
+
+        $stmt->bind_param("ssssi", $assetName, $model, $assetType, $location, $excludeId);
+
+    }else{
+
+        $stmt->bind_param("ssss", $assetName, $model, $assetType, $location);
+    }
+
+    $stmt->execute();
+
+    return $stmt->get_result()->num_rows > 0;
+}
+
+function duplicateNamedAssetExists($conn, $assetName, $serialNumber, $numberPlate, $excludeId = 0){
+
+    $assetName = strtolower(trim((string)$assetName));
+    $serialNumber = strtolower(trim((string)$serialNumber));
+    $numberPlate = strtolower(trim((string)$numberPlate));
+
+    if($assetName === ''){
+
+        return false;
+    }
+
+    $sql = "
+        SELECT id
+        FROM assets
+        WHERE LOWER(TRIM(IFNULL(asset_name,''))) = ?
+    ";
+
+    $types = "s";
+    $params = [$assetName];
+
+    if($serialNumber !== ''){
+
+        $sql .= " AND LOWER(TRIM(IFNULL(serial_number,''))) = ?";
+        $types .= "s";
+        $params[] = $serialNumber;
+    }
+
+    if($numberPlate !== ''){
+
+        $sql .= " AND LOWER(TRIM(IFNULL(number_plate,''))) = ?";
+        $types .= "s";
+        $params[] = $numberPlate;
+    }
+
+    if($serialNumber === '' && $numberPlate === ''){
+
+        return false;
+    }
+
+    if($excludeId > 0){
+
+        $sql .= " AND id <> ?";
+        $types .= "i";
+        $params[] = $excludeId;
+    }
+
+    $sql .= " LIMIT 1";
+
+    $stmt = $conn->prepare($sql);
+
+    if(!$stmt){
+
+        return false;
+    }
+
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+
+    return $stmt->get_result()->num_rows > 0;
+}
+
+/* =========================================================
    REGISTER ASSET
 ========================================================= */
 
@@ -67,6 +224,26 @@ if(isset($_POST['register_asset'])){
 
     $date_purchased = $_POST['date_purchased'] ?? null;
     $status = trim($_POST['status'] ?? 'Operational');
+
+    if(duplicateAssetExists($conn, 'serial_number', $serial_number)){
+
+        redirectToSamePage('Duplicate asset blocked. This serial number is already registered.');
+    }
+
+    if(duplicateAssetExists($conn, 'number_plate', $number_plate)){
+
+        redirectToSamePage('Duplicate asset blocked. This number plate is already registered.');
+    }
+
+    if(duplicateAssetProfileExists($conn, $asset_name, $model, $asset_type, $location)){
+
+        redirectToSamePage('Duplicate asset blocked. An asset with the same name, model, type and location already exists.');
+    }
+
+    if(duplicateNamedAssetExists($conn, $asset_name, $serial_number, $number_plate)){
+
+        redirectToSamePage('Duplicate asset blocked. This asset name is already registered with the same serial number or number plate.');
+    }
 
     $stmt = $conn->prepare("
         INSERT INTO assets
@@ -138,6 +315,26 @@ if(isset($_POST['update_asset'])){
     $date_purchased = $_POST['date_purchased'] ?? null;
     $status = trim($_POST['status'] ?? 'Operational');
 
+    if(duplicateAssetExists($conn, 'serial_number', $serial_number, $id)){
+
+        redirectToSamePage('Update blocked. Another active asset already uses this serial number.');
+    }
+
+    if(duplicateAssetExists($conn, 'number_plate', $number_plate, $id)){
+
+        redirectToSamePage('Update blocked. Another active asset already uses this number plate.');
+    }
+
+    if(duplicateAssetProfileExists($conn, $asset_name, $model, $asset_type, $location, $id)){
+
+        redirectToSamePage('Update blocked. Another active asset has the same name, model, type and location.');
+    }
+
+    if(duplicateNamedAssetExists($conn, $asset_name, $serial_number, $number_plate, $id)){
+
+        redirectToSamePage('Update blocked. Another asset already has this name with the same serial number or number plate.');
+    }
+
     $stmt = $conn->prepare("
         UPDATE assets
         SET
@@ -196,7 +393,9 @@ if(isset($_POST['deactivate_asset'])){
 
     $stmt = $conn->prepare("
         UPDATE assets
-        SET is_deactivated = 1
+        SET
+            is_deactivated = 1,
+            status = 'Deactivated'
         WHERE id = ?
     ");
 
@@ -209,7 +408,7 @@ if(isset($_POST['deactivate_asset'])){
 
     if($stmt->execute()){
 
-        redirectToSamePage();
+        redirectToSamePage('Asset deactivated successfully.');
 
     }else{
 
@@ -391,6 +590,11 @@ th:last-child{
     border-color:#cbd5e1;
 }
 
+.action-wrapper > button:not([onclick^="toggleMenu"]),
+.action-wrapper > form{
+    display:none !important;
+}
+
 .action-menu{
     display:none;
     position:absolute;
@@ -419,6 +623,15 @@ th:last-child{
 
 .action-menu button:hover{
     background:#f8fafc;
+}
+
+.action-menu form{
+    margin:0;
+}
+
+.action-menu form button{
+    color:#7f1d1d;
+    font-weight:700;
 }
 
 .modal{
@@ -605,6 +818,33 @@ Net: KES <?= number_format((float)($row['net_value'] ?? 0)); ?>
 <td>
 
 <div class="action-wrapper">
+
+<button
+type="button"
+class="action-btn"
+onclick='openEditModal(
+<?= htmlspecialchars(json_encode($row), ENT_QUOTES, "UTF-8"); ?>
+)'>
+Edit
+</button>
+
+<form
+method="POST"
+onsubmit="return confirm('Are you sure you want to deactivate this asset?');">
+
+<input
+type="hidden"
+name="asset_id"
+value="<?= htmlspecialchars($row['id'] ?? ''); ?>">
+
+<button
+type="submit"
+name="deactivate_asset"
+class="deactivate-btn">
+Deactivate
+</button>
+
+</form>
 
 <button
 type="button"

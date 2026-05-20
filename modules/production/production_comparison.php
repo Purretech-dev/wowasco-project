@@ -234,6 +234,7 @@ $typeSql = "
         ON p.meter_id = m.id
         AND p.pumped_date BETWEEN ? AND ?
     $where
+    AND LOWER(TRIM(IFNULL(m.customer_type,''))) <> 'industrial'
     GROUP BY customer_type_name
     ORDER BY production_volume DESC
 ";
@@ -343,6 +344,7 @@ $types = $conn->query("
     SELECT DISTINCT customer_type
     FROM meters
     WHERE customer_type IS NOT NULL AND customer_type != ''
+    AND LOWER(TRIM(customer_type)) <> 'industrial'
     ORDER BY customer_type ASC
 ");
 

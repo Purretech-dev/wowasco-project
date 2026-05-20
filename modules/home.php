@@ -3,21 +3,48 @@
 <?php
 include $_SERVER['DOCUMENT_ROOT'].'/wowasco-system/api/db.php';
 
+/* ================= HELPERS ================= */
+
+function tableExists($conn, $table){
+
+    $table = $conn->real_escape_string($table);
+    $res = $conn->query("SHOW TABLES LIKE '$table'");
+
+    return $res && $res->num_rows > 0;
+}
+
+function columnExists($conn, $table, $column){
+
+    if(!tableExists($conn, $table)){
+        return false;
+    }
+
+    $table = $conn->real_escape_string($table);
+    $column = $conn->real_escape_string($column);
+    $res = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$column'");
+
+    return $res && $res->num_rows > 0;
+}
+
 /* ================= FETCH METERS ================= */
 
 $meters = [];
 
+$meterWhere = columnExists($conn, 'meters', 'is_deactivated')
+    ? "WHERE is_deactivated = 0"
+    : "";
+
 $res = $conn->query("
     SELECT * 
     FROM meters
-    WHERE is_deactivated = 0
+    $meterWhere
 ");
 
-while($row = $res->fetch_assoc()){
+while($res && $row = $res->fetch_assoc()){
     $meters[] = $row;
 }
 
-/* ================= HELPERS ================= */
+/* ================= DATA GROUPING HELPER ================= */
 
 function groupBy($data, $key){
 
@@ -72,17 +99,25 @@ $inactiveByType = groupBy($inactiveMeters, 'customer_type');
 $zoneRevenue = [];
 $totalRevenue = 0;
 
-$revenueQuery = $conn->query("
-    SELECT 
-        m.zone,
-        SUM(r.consumption * 20) AS revenue
-    FROM meter_readings r
-    INNER JOIN meters m
-        ON r.meter_id = m.id
-    GROUP BY m.zone
-");
+if(
+    tableExists($conn, 'meter_readings') &&
+    columnExists($conn, 'meter_readings', 'consumption') &&
+    columnExists($conn, 'meter_readings', 'meter_id') &&
+    columnExists($conn, 'meters', 'zone')
+){
 
-while($row = $revenueQuery->fetch_assoc()){
+    $revenueQuery = $conn->query("
+        SELECT
+            m.zone,
+            SUM(r.consumption * 20) AS revenue
+        FROM meter_readings r
+        INNER JOIN meters m
+            ON r.meter_id = m.id
+        GROUP BY m.zone
+    ");
+}
+
+while(isset($revenueQuery) && $revenueQuery && $row = $revenueQuery->fetch_assoc()){
 
     $zone = $row['zone'] ?: 'Unknown';
 
@@ -90,6 +125,129 @@ while($row = $revenueQuery->fetch_assoc()){
 
     $totalRevenue += $row['revenue'];
 }
+
+/* ================= MONTHLY ANALYTICS ================= */
+
+$monthLabels = [];
+$monthKeys = [];
+$monthlyRevenueTrend = [];
+$monthlyPumpedTrend = [];
+$monthlyApplicationsTrend = [];
+$monthlyComplaintsTrend = [];
+
+for($i = 5; $i >= 0; $i--){
+
+    $key = date('Y-m', strtotime("-$i months"));
+
+    $monthKeys[] = $key;
+    $monthLabels[] = date('M Y', strtotime($key . '-01'));
+    $monthlyRevenueTrend[$key] = 0;
+    $monthlyPumpedTrend[$key] = 0;
+    $monthlyApplicationsTrend[$key] = 0;
+    $monthlyComplaintsTrend[$key] = 0;
+}
+
+$currentMonthKey = date('Y-m');
+$currentMonthName = date('F Y');
+$currentMonthStart = date('Y-m-01');
+$currentMonthEnd = date('Y-m-t');
+
+if(
+    tableExists($conn, 'meter_readings') &&
+    columnExists($conn, 'meter_readings', 'reading_date') &&
+    columnExists($conn, 'meter_readings', 'consumption')
+){
+
+    $safeStart = $conn->real_escape_string(date('Y-m-01', strtotime('-5 months')));
+
+    $monthlyRevenueQuery = $conn->query("
+        SELECT
+            DATE_FORMAT(reading_date, '%Y-%m') AS month_key,
+            SUM(consumption * 20) AS revenue
+        FROM meter_readings
+        WHERE DATE(reading_date) >= '$safeStart'
+        GROUP BY DATE_FORMAT(reading_date, '%Y-%m')
+    ");
+
+    while($monthlyRevenueQuery && $row = $monthlyRevenueQuery->fetch_assoc()){
+
+        if(isset($monthlyRevenueTrend[$row['month_key']])){
+            $monthlyRevenueTrend[$row['month_key']] = round((float)$row['revenue'], 2);
+        }
+    }
+}
+
+if(
+    tableExists($conn, 'pumped_volume_entries') &&
+    columnExists($conn, 'pumped_volume_entries', 'pumped_date') &&
+    columnExists($conn, 'pumped_volume_entries', 'volume_m3')
+){
+
+    $safeStart = $conn->real_escape_string(date('Y-m-01', strtotime('-5 months')));
+
+    $monthlyPumpedQuery = $conn->query("
+        SELECT
+            DATE_FORMAT(pumped_date, '%Y-%m') AS month_key,
+            SUM(volume_m3) AS pumped_volume
+        FROM pumped_volume_entries
+        WHERE DATE(pumped_date) >= '$safeStart'
+        GROUP BY DATE_FORMAT(pumped_date, '%Y-%m')
+    ");
+
+    while($monthlyPumpedQuery && $row = $monthlyPumpedQuery->fetch_assoc()){
+
+        if(isset($monthlyPumpedTrend[$row['month_key']])){
+            $monthlyPumpedTrend[$row['month_key']] = round((float)$row['pumped_volume'], 2);
+        }
+    }
+}
+
+if(tableExists($conn, 'meter_applications') && columnExists($conn, 'meter_applications', 'created_at')){
+
+    $safeStart = $conn->real_escape_string(date('Y-m-01', strtotime('-5 months')));
+
+    $monthlyApplicationsQuery = $conn->query("
+        SELECT
+            DATE_FORMAT(created_at, '%Y-%m') AS month_key,
+            COUNT(*) AS total_applications
+        FROM meter_applications
+        WHERE DATE(created_at) >= '$safeStart'
+        GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+    ");
+
+    while($monthlyApplicationsQuery && $row = $monthlyApplicationsQuery->fetch_assoc()){
+
+        if(isset($monthlyApplicationsTrend[$row['month_key']])){
+            $monthlyApplicationsTrend[$row['month_key']] = (int)$row['total_applications'];
+        }
+    }
+}
+
+if(tableExists($conn, 'customer_complaints') && columnExists($conn, 'customer_complaints', 'created_at')){
+
+    $safeStart = $conn->real_escape_string(date('Y-m-01', strtotime('-5 months')));
+
+    $monthlyComplaintsQuery = $conn->query("
+        SELECT
+            DATE_FORMAT(created_at, '%Y-%m') AS month_key,
+            COUNT(*) AS total_complaints
+        FROM customer_complaints
+        WHERE DATE(created_at) >= '$safeStart'
+        GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+    ");
+
+    while($monthlyComplaintsQuery && $row = $monthlyComplaintsQuery->fetch_assoc()){
+
+        if(isset($monthlyComplaintsTrend[$row['month_key']])){
+            $monthlyComplaintsTrend[$row['month_key']] = (int)$row['total_complaints'];
+        }
+    }
+}
+
+$monthlyRevenue = $monthlyRevenueTrend[$currentMonthKey] ?? 0;
+$monthlyPumped = $monthlyPumpedTrend[$currentMonthKey] ?? 0;
+$monthlyApplications = $monthlyApplicationsTrend[$currentMonthKey] ?? 0;
+$monthlyComplaints = $monthlyComplaintsTrend[$currentMonthKey] ?? 0;
 
 /* ================= ZONE SUMMARY ================= */
 
@@ -171,6 +329,79 @@ if(!empty($zoneRevenue)){
     display:block;
     color:#64748b;
     font-size:13px;
+}
+
+/* ================= MONTHLY ANALYTICS ================= */
+
+.monthly-panel{
+    background:#ffffff;
+    border:1px solid #e2e8f0;
+    border-radius:18px;
+    padding:18px;
+    margin-bottom:24px;
+    box-shadow:0 4px 12px rgba(0,0,0,0.03);
+}
+
+.monthly-panel-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+    flex-wrap:wrap;
+    margin-bottom:16px;
+}
+
+.monthly-panel-title{
+    color:#0f172a;
+    font-size:18px;
+    font-weight:700;
+}
+
+.monthly-panel-subtitle{
+    color:#64748b;
+    font-size:13px;
+    margin-top:4px;
+}
+
+.monthly-range{
+    color:#1e3a8a;
+    background:#eff6ff;
+    border:1px solid #dbeafe;
+    border-radius:999px;
+    padding:8px 12px;
+    font-size:12px;
+    font-weight:700;
+}
+
+.monthly-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+    gap:14px;
+}
+
+.monthly-item{
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+    border-radius:14px;
+    padding:15px;
+}
+
+.monthly-label{
+    color:#64748b;
+    font-size:13px;
+    margin-bottom:8px;
+}
+
+.monthly-value{
+    color:#0f172a;
+    font-size:24px;
+    font-weight:800;
+}
+
+.monthly-note{
+    margin-top:7px;
+    color:#64748b;
+    font-size:12px;
 }
 
 /* ================= KPI ================= */
@@ -536,6 +767,53 @@ tr:hover{
 
 </div>
 
+<!-- ================= MONTHLY ANALYTICS ================= -->
+
+<div class="monthly-panel">
+
+    <div class="monthly-panel-header">
+        <div>
+            <div class="monthly-panel-title">Monthly Analytics</div>
+            <div class="monthly-panel-subtitle">
+                Current month operational snapshot.
+            </div>
+        </div>
+
+        <div class="monthly-range">
+            <?= htmlspecialchars($currentMonthName); ?>
+        </div>
+    </div>
+
+    <div class="monthly-grid">
+
+        <div class="monthly-item">
+            <div class="monthly-label">Monthly Revenue</div>
+            <div class="monthly-value">KES <?= number_format($monthlyRevenue); ?></div>
+            <div class="monthly-note">From meter readings this month</div>
+        </div>
+
+        <div class="monthly-item">
+            <div class="monthly-label">Pumped Volume</div>
+            <div class="monthly-value"><?= number_format($monthlyPumped, 2); ?> m³</div>
+            <div class="monthly-note">Total production volume this month</div>
+        </div>
+
+        <div class="monthly-item">
+            <div class="monthly-label">Meter Applications</div>
+            <div class="monthly-value"><?= number_format($monthlyApplications); ?></div>
+            <div class="monthly-note">New customer applications this month</div>
+        </div>
+
+        <div class="monthly-item">
+            <div class="monthly-label">Customer Complaints</div>
+            <div class="monthly-value"><?= number_format($monthlyComplaints); ?></div>
+            <div class="monthly-note">Complaints raised this month</div>
+        </div>
+
+    </div>
+
+</div>
+
 <!-- ================= KPI ================= -->
 
 <div class="kpi-grid">
@@ -574,8 +852,8 @@ tr:hover{
 
         <div class="card-header">
             <div>
-                <div class="card-title">Revenue Analytics</div>
-                <div class="card-subtitle">Monthly utility performance overview</div>
+                <div class="card-title">Six-Month Revenue Analytics</div>
+                <div class="card-subtitle">Database-driven monthly utility performance trend</div>
             </div>
 
             <button class="action-btn" onclick="showFullIntelligenceReport()">
@@ -817,6 +1095,15 @@ const dashboardIntel = {
     criticalZones: <?= json_encode($criticalZones); ?>,
     highestRevenueZone: <?= json_encode($highestRevenueZone); ?>,
     reportDate: "<?= date('d M Y'); ?>"
+};
+
+const monthlyAnalytics = {
+    labels: <?= json_encode($monthLabels); ?>,
+    revenue: <?= json_encode(array_values($monthlyRevenueTrend)); ?>,
+    pumped: <?= json_encode(array_values($monthlyPumpedTrend)); ?>,
+    applications: <?= json_encode(array_values($monthlyApplicationsTrend)); ?>,
+    complaints: <?= json_encode(array_values($monthlyComplaintsTrend)); ?>,
+    currentMonth: <?= json_encode($currentMonthName); ?>
 };
 
 /* ================= REVENUE DRILL ================= */
@@ -1162,21 +1449,11 @@ new Chart(document.getElementById('revenueChart'), {
     type:'bar',
 
     data:{
-        labels:[
-            'Jan','Feb','Mar',
-            'Apr','May','Jun'
-        ],
+        labels: monthlyAnalytics.labels,
 
         datasets:[{
             label:'Revenue',
-            data:[
-                1200000,
-                1400000,
-                1600000,
-                1800000,
-                2200000,
-                2500000
-            ],
+            data: monthlyAnalytics.revenue,
             backgroundColor:'#1e3a8a',
             borderRadius:8
         }]
