@@ -17,10 +17,49 @@ CREATE TABLE IF NOT EXISTS pumped_volume_entries (
 )
 ");
 
+$conn->query("
+CREATE TABLE IF NOT EXISTS meter_readings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    meter_id INT NOT NULL,
+    reading_date DATE NOT NULL,
+    consumption DECIMAL(12,2) NOT NULL DEFAULT 0,
+    reading_photo VARCHAR(255) NULL,
+    source_type VARCHAR(80) DEFAULT 'Conventional Upload',
+    remarks TEXT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX (meter_id),
+    INDEX (reading_date)
+)
+");
+
 /* ================= HELPERS ================= */
 
 function safe($value){
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+}
+
+function tableExists($conn, $table){
+    $table = $conn->real_escape_string($table);
+    $res = $conn->query("SHOW TABLES LIKE '$table'");
+    return $res && $res->num_rows > 0;
+}
+
+function columnExists($conn, $table, $column){
+    if(!tableExists($conn, $table)){
+        return false;
+    }
+
+    $table = $conn->real_escape_string($table);
+    $column = $conn->real_escape_string($column);
+    $res = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$column'");
+
+    return $res && $res->num_rows > 0;
+}
+
+function addColumnIfMissing($conn, $table, $column, $definition){
+    if(tableExists($conn, $table) && !columnExists($conn, $table, $column)){
+        $conn->query("ALTER TABLE `$table` ADD `$column` $definition");
+    }
 }
 
 function jsRedirect($url){
@@ -28,13 +67,18 @@ function jsRedirect($url){
     exit;
 }
 
-function redirectBack(){
+function redirectBack($savedKey = 'saved'){
     $query = $_GET;
-    $query['saved'] = 1;
+    $query[$savedKey] = 1;
     $query['page'] = 'modules/production/pumped_volume.php';
 
     jsRedirect("dashboard.php?" . http_build_query($query));
 }
+
+addColumnIfMissing($conn, 'meter_readings', 'consumption', "DECIMAL(12,2) NOT NULL DEFAULT 0");
+addColumnIfMissing($conn, 'meter_readings', 'reading_photo', "VARCHAR(255) NULL");
+addColumnIfMissing($conn, 'meter_readings', 'source_type', "VARCHAR(80) DEFAULT 'Conventional Upload'");
+addColumnIfMissing($conn, 'meter_readings', 'remarks', "TEXT NULL");
 
 /* ================= SAVE PUMPED VOLUME ================= */
 
@@ -60,6 +104,64 @@ if($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_volume'])){
             $pumped_date,
             $volume_m3,
             $source_type,
+            $remarks
+        );
+
+        $stmt->execute();
+    }
+
+    redirectBack('reading_saved');
+}
+
+/* ================= SAVE CONVENTIONAL METER READING PHOTO ================= */
+
+if($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_conventional_reading'])){
+
+    $meter_id = (int)($_POST['conventional_meter_id'] ?? 0);
+    $reading_date = $_POST['reading_date'] ?? date('Y-m-d');
+    $remarks = trim($_POST['reading_remarks'] ?? '');
+    $photoPath = '';
+
+    if($meter_id > 0 && !empty($_FILES['reading_photo']['name'])){
+
+        $allowedTypes = ['jpg', 'jpeg', 'png'];
+        $fileName = $_FILES['reading_photo']['name'];
+        $fileTmp = $_FILES['reading_photo']['tmp_name'];
+        $fileExt = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+
+        if(in_array($fileExt, $allowedTypes)){
+            $uploadDir = __DIR__ . '/../../uploads/meter_readings/';
+
+            if(!is_dir($uploadDir)){
+                mkdir($uploadDir, 0777, true);
+            }
+
+            $newFileName = 'CONV_READING_' . time() . '_' . rand(1000, 9999) . '.' . $fileExt;
+            $targetPath = $uploadDir . $newFileName;
+
+            if(move_uploaded_file($fileTmp, $targetPath)){
+                $photoPath = 'uploads/meter_readings/' . $newFileName;
+            }
+        }
+    }
+
+    if($meter_id > 0 && $photoPath !== ''){
+        $sourceType = 'Conventional Upload';
+        $consumption = 0;
+
+        $stmt = $conn->prepare("
+            INSERT INTO meter_readings
+            (meter_id, reading_date, consumption, reading_photo, source_type, remarks)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ");
+
+        $stmt->bind_param(
+            "isdsss",
+            $meter_id,
+            $reading_date,
+            $consumption,
+            $photoPath,
+            $sourceType,
             $remarks
         );
 
@@ -179,7 +281,7 @@ while($row = $allResult->fetch_assoc()){
     $allRows[] = $row;
 }
 
-/* ================= KPI DATA BASED ON CURRENT SCOPE ================= */
+/* ================= ANALYTICS DATA BASED ON CURRENT SCOPE ================= */
 
 $total_records = count($allRows);
 $total_volume_all = 0;
@@ -290,6 +392,27 @@ $metersList = $conn->query("
     ORDER BY serial_number ASC
 ");
 
+$conventionalFilters = [];
+
+if(columnExists($conn, 'meters', 'meter_type')){
+    $conventionalFilters[] = "LOWER(meter_type) LIKE '%conventional%'";
+}
+
+if(columnExists($conn, 'meters', 'type')){
+    $conventionalFilters[] = "LOWER(`type`) LIKE '%conventional%'";
+}
+
+$conventionalWhere = !empty($conventionalFilters)
+    ? "WHERE (" . implode(" OR ", $conventionalFilters) . ")"
+    : "";
+
+$conventionalMetersList = $conn->query("
+    SELECT id, serial_number, customer_name, zone, customer_type
+    FROM meters
+    $conventionalWhere
+    ORDER BY serial_number ASC
+");
+
 $serials = $conn->query("
     SELECT DISTINCT serial_number
     FROM meters
@@ -371,36 +494,40 @@ body{
     font-weight:800;
 }
 
-.kpis{
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
-    gap:18px;
-    margin-bottom:24px;
-}
-
-.kpi-card{
-    background:white;
-    border-radius:16px;
-    padding:22px;
+.entry-tabs{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    margin-bottom:16px;
+    background:#fff;
     border:1px solid #e2e8f0;
-    border-left:5px solid #1e7d4f;
-    box-shadow:0 4px 14px rgba(15,23,42,0.04);
+    border-radius:14px;
+    padding:10px;
 }
 
-.kpi-card.blue{ border-left-color:#1e3a8a; }
-.kpi-card.yellow{ border-left-color:#eab308; }
-
-.kpi-card h3{
-    margin:0;
-    font-size:28px;
-    color:#0f172a;
-}
-
-.kpi-card p{
-    margin:8px 0 0;
+.entry-tab{
+    border:1px solid #dbe2ea;
+    background:#f8fafc;
+    color:#334155;
+    border-radius:10px;
+    padding:11px 14px;
+    cursor:pointer;
+    font-weight:800;
     font-size:13px;
-    color:#64748b;
-    font-weight:700;
+}
+
+.entry-tab.active{
+    background:#0a2a43;
+    border-color:#0a2a43;
+    color:#fff;
+}
+
+.entry-section{
+    display:none;
+}
+
+.entry-section.active{
+    display:block;
 }
 
 .card{
@@ -673,6 +800,10 @@ tr:hover td{
     .drill-card{
         grid-template-columns:1fr;
     }
+
+    .entry-tab{
+        width:100%;
+    }
 }
 
 /* ================= PRINT FILTERED DATA ONLY ================= */
@@ -817,39 +948,23 @@ tr:hover td{
     </div>
 <?php endif; ?>
 
-<div class="kpis">
-
-    <div class="kpi-card">
-        <h3><?= number_format($total_records) ?></h3>
-        <p><?= $filterApplied ? 'Filtered Meters' : 'All Meters' ?></p>
+<?php if(isset($_GET['reading_saved'])): ?>
+    <div class="alert-success">
+        Conventional meter reading photo uploaded successfully.
     </div>
+<?php endif; ?>
 
-    <div class="kpi-card blue">
-        <h3><?= number_format($total_volume_all,2) ?></h3>
-        <p>Total Pumped Volume (m³)</p>
-    </div>
+<div class="entry-tabs">
+    <button type="button" class="entry-tab active" data-entry-section="pumpedVolumeEntry">
+        Add Pumped Volume Record
+    </button>
 
-    <div class="kpi-card">
-        <h3><?= number_format($activeMeters) ?></h3>
-        <p>Active Meters in Scope</p>
-    </div>
-
-    <div class="kpi-card yellow">
-        <h3><?= safe($highestZone) ?></h3>
-        <p>Top Consumption Zone</p>
-    </div>
-
-    <div class="kpi-card blue">
-        <h3><?= safe($highestType) ?></h3>
-        <p>Top Customer Type</p>
-    </div>
-
-    <div class="kpi-card">
-        <h3><?= number_format($avgVolume,2) ?></h3>
-        <p>Average Volume per Meter</p>
-    </div>
-
+    <button type="button" class="entry-tab" data-entry-section="conventionalReadingEntry">
+        Upload Meter Readings for Conventional Meters
+    </button>
 </div>
+
+<div id="pumpedVolumeEntry" class="entry-section active">
 
 <div class="card">
 
@@ -893,6 +1008,46 @@ tr:hover td{
         </button>
 
     </form>
+
+</div>
+
+</div>
+
+<div id="conventionalReadingEntry" class="entry-section">
+
+<div class="card">
+
+    <div class="card-title">Upload Meter Readings for Conventional Meters</div>
+
+    <form method="POST" enctype="multipart/form-data" class="form-grid">
+
+        <select name="conventional_meter_id" required>
+            <option value="">Select Conventional Meter</option>
+
+            <?php if($conventionalMetersList && $conventionalMetersList->num_rows > 0): ?>
+                <?php while($cm = $conventionalMetersList->fetch_assoc()): ?>
+                    <option value="<?= (int)$cm['id'] ?>">
+                        <?= safe($cm['serial_number']) ?> -
+                        <?= safe($cm['customer_name'] ?: 'N/A') ?> -
+                        <?= safe($cm['zone'] ?: 'Unassigned') ?>
+                    </option>
+                <?php endwhile; ?>
+            <?php endif; ?>
+        </select>
+
+        <input type="date" name="reading_date" value="<?= date('Y-m-d') ?>" required>
+
+        <input type="file" name="reading_photo" accept=".jpg,.jpeg,.png" required>
+
+        <textarea name="reading_remarks" placeholder="Remarks / reading notes"></textarea>
+
+        <button type="submit" name="save_conventional_reading">
+            Save Conventional Reading
+        </button>
+
+    </form>
+
+</div>
 
 </div>
 
@@ -1241,8 +1396,8 @@ tr:hover td{
 
         <br><br>
 
-        When no filters are applied, KPIs summarize all meters. When filters are applied,
-        KPIs, tables, print output, zone analysis, and customer type analysis automatically reflect the filtered dataset only.
+        When no filters are applied, the tables and analysis summarize all meters. When filters are applied,
+        tables, print output, zone analysis, and customer type analysis automatically reflect the filtered dataset only.
     </div>
 
 </div>
@@ -1254,6 +1409,34 @@ tr:hover td{
 </div>
 
 <script>
+document.addEventListener('DOMContentLoaded', function(){
+    const buttons = document.querySelectorAll('.entry-tab');
+    const sections = document.querySelectorAll('.entry-section');
+    const savedSection = localStorage.getItem('pumpedVolumeEntrySection') || 'pumpedVolumeEntry';
+
+    function openEntrySection(sectionId){
+        sections.forEach(function(section){
+            section.classList.toggle('active', section.id === sectionId);
+        });
+
+        buttons.forEach(function(button){
+            button.classList.toggle('active', button.dataset.entrySection === sectionId);
+        });
+
+        localStorage.setItem('pumpedVolumeEntrySection', sectionId);
+    }
+
+    buttons.forEach(function(button){
+        button.addEventListener('click', function(){
+            openEntrySection(button.dataset.entrySection);
+        });
+    });
+
+    if(document.getElementById(savedSection)){
+        openEntrySection(savedSection);
+    }
+});
+
 function toggleTable(id, btn){
 
     let tables = [

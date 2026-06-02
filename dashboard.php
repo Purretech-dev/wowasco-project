@@ -53,6 +53,10 @@ $allowed_pages = [
     'modules/assets/asset_management.php',
     'modules/assets/asset_maintenance.php',
 
+    // APPROVAL WORKFLOW
+    'modules/approvals/deactivation_checker.php',
+    'modules/approvals/deactivation_approver.php',
+
     // CUSTOMER RELATIONS
     'modules/customer/customer_portal.php',
     'modules/customer/customer_management.php',

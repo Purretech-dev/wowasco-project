@@ -90,6 +90,7 @@ $nrw = rand(14,22);
 
 $activeByZone = groupBy($activeMeters, 'zone');
 $inactiveByZone = groupBy($inactiveMeters, 'zone');
+$metersByZone = groupBy($meters, 'zone');
 
 $activeByType = groupBy($activeMeters, 'customer_type');
 $inactiveByType = groupBy($inactiveMeters, 'customer_type');
@@ -152,6 +153,95 @@ $currentMonthName = date('F Y');
 $currentMonthStart = date('Y-m-01');
 $currentMonthEnd = date('Y-m-t');
 
+/* ================= FINANCIAL YEAR CONFIG ================= */
+
+$financialYearStartMonth = 7;
+$financialYearStartDay = 1;
+$currentYear = (int)date('Y');
+$currentMonth = (int)date('n');
+
+if($currentMonth >= $financialYearStartMonth){
+    $financialYearStartYear = $currentYear;
+    $financialYearEndYear = $currentYear + 1;
+}else{
+    $financialYearStartYear = $currentYear - 1;
+    $financialYearEndYear = $currentYear;
+}
+
+$financialYearStart = sprintf('%04d-%02d-%02d', $financialYearStartYear, $financialYearStartMonth, $financialYearStartDay);
+$financialYearEnd = sprintf('%04d-%02d-%02d', $financialYearEndYear, 6, 30);
+$financialYearLabel = 'FY ' . $financialYearStartYear . '/' . $financialYearEndYear;
+$financialYearConfigLabel = date('d M Y', strtotime($financialYearStart)) . ' - ' . date('d M Y', strtotime($financialYearEnd));
+
+$financialYearOptions = [];
+
+for($year = $financialYearStartYear - 4; $year <= $financialYearStartYear + 1; $year++){
+    $financialYearOptions[] = $year;
+}
+
+$selectedFinancialYearStartYear = isset($_GET['analytics_fy'])
+    ? (int)$_GET['analytics_fy']
+    : $financialYearStartYear;
+
+if(!in_array($selectedFinancialYearStartYear, $financialYearOptions, true)){
+    $selectedFinancialYearStartYear = $financialYearStartYear;
+}
+
+$financialYearStartYear = $selectedFinancialYearStartYear;
+$financialYearEndYear = $financialYearStartYear + 1;
+$financialYearStart = sprintf('%04d-%02d-%02d', $financialYearStartYear, $financialYearStartMonth, $financialYearStartDay);
+$financialYearEnd = sprintf('%04d-%02d-%02d', $financialYearEndYear, 6, 30);
+$financialYearLabel = 'FY ' . $financialYearStartYear . '/' . $financialYearEndYear;
+$financialYearConfigLabel = date('d M Y', strtotime($financialYearStart)) . ' - ' . date('d M Y', strtotime($financialYearEnd));
+
+$financialYearMonthOptions = [];
+$monthCursor = strtotime($financialYearStart);
+$monthLimit = strtotime($financialYearEnd);
+
+while($monthCursor <= $monthLimit){
+    $monthKey = date('Y-m', $monthCursor);
+    $financialYearMonthOptions[$monthKey] = date('F Y', $monthCursor);
+    $monthCursor = strtotime('+1 month', $monthCursor);
+}
+
+$selectedMonthKey = trim($_GET['analytics_month'] ?? $currentMonthKey);
+
+if(!isset($financialYearMonthOptions[$selectedMonthKey])){
+    $selectedMonthKey = isset($financialYearMonthOptions[$currentMonthKey])
+        ? $currentMonthKey
+        : array_key_first($financialYearMonthOptions);
+}
+
+$selectedMonthName = $financialYearMonthOptions[$selectedMonthKey] ?? $currentMonthName;
+$selectedMonthStart = $selectedMonthKey . '-01';
+$selectedMonthEnd = date('Y-m-t', strtotime($selectedMonthStart));
+
+/* ================= TODAY / FY ANALYTICS ================= */
+
+$todayDate = date('Y-m-d');
+$todayLabel = date('d M Y');
+
+$todayRevenue = 0;
+$todayPumped = 0;
+$todayApplications = 0;
+$todayComplaints = 0;
+$todayBilled = 0;
+$todayWaterLoss = 0;
+
+$financialYearRevenue = 0;
+$financialYearPumped = 0;
+$financialYearApplications = 0;
+$financialYearComplaints = 0;
+$financialYearBilled = 0;
+$financialYearWaterLoss = 0;
+
+$monthlyRevenue = 0;
+$monthlyPumped = 0;
+$monthlyApplications = 0;
+$monthlyComplaints = 0;
+$monthlyBilled = 0;
+$monthlyWaterLoss = 0;
+
 if(
     tableExists($conn, 'meter_readings') &&
     columnExists($conn, 'meter_readings', 'reading_date') &&
@@ -174,6 +264,57 @@ if(
         if(isset($monthlyRevenueTrend[$row['month_key']])){
             $monthlyRevenueTrend[$row['month_key']] = round((float)$row['revenue'], 2);
         }
+    }
+
+    $safeToday = $conn->real_escape_string($todayDate);
+    $todayRevenueQuery = $conn->query("
+        SELECT SUM(consumption * 20) AS revenue
+        FROM meter_readings
+        WHERE DATE(reading_date) = '$safeToday'
+    ");
+
+    if($todayRevenueQuery && $row = $todayRevenueQuery->fetch_assoc()){
+        $todayRevenue = round((float)($row['revenue'] ?? 0), 2);
+    }
+
+    $todayBilledQuery = $conn->query("
+        SELECT SUM(consumption) AS billed_volume
+        FROM meter_readings
+        WHERE DATE(reading_date) = '$safeToday'
+    ");
+
+    if($todayBilledQuery && $row = $todayBilledQuery->fetch_assoc()){
+        $todayBilled = round((float)($row['billed_volume'] ?? 0), 2);
+    }
+
+    $safeMonthStart = $conn->real_escape_string($selectedMonthStart);
+    $safeMonthEnd = $conn->real_escape_string($selectedMonthEnd);
+    $monthlyRevenueQuery = $conn->query("
+        SELECT
+            SUM(consumption * 20) AS revenue,
+            SUM(consumption) AS billed_volume
+        FROM meter_readings
+        WHERE DATE(reading_date) BETWEEN '$safeMonthStart' AND '$safeMonthEnd'
+    ");
+
+    if($monthlyRevenueQuery && $row = $monthlyRevenueQuery->fetch_assoc()){
+        $monthlyRevenue = round((float)($row['revenue'] ?? 0), 2);
+        $monthlyBilled = round((float)($row['billed_volume'] ?? 0), 2);
+    }
+
+    $safeFyStart = $conn->real_escape_string($financialYearStart);
+    $safeFyEnd = $conn->real_escape_string($financialYearEnd);
+    $financialYearRevenueQuery = $conn->query("
+        SELECT
+            SUM(consumption * 20) AS revenue,
+            SUM(consumption) AS billed_volume
+        FROM meter_readings
+        WHERE DATE(reading_date) BETWEEN '$safeFyStart' AND '$safeFyEnd'
+    ");
+
+    if($financialYearRevenueQuery && $row = $financialYearRevenueQuery->fetch_assoc()){
+        $financialYearRevenue = round((float)($row['revenue'] ?? 0), 2);
+        $financialYearBilled = round((float)($row['billed_volume'] ?? 0), 2);
     }
 }
 
@@ -200,6 +341,41 @@ if(
             $monthlyPumpedTrend[$row['month_key']] = round((float)$row['pumped_volume'], 2);
         }
     }
+
+    $safeToday = $conn->real_escape_string($todayDate);
+    $todayPumpedQuery = $conn->query("
+        SELECT SUM(volume_m3) AS pumped_volume
+        FROM pumped_volume_entries
+        WHERE DATE(pumped_date) = '$safeToday'
+    ");
+
+    if($todayPumpedQuery && $row = $todayPumpedQuery->fetch_assoc()){
+        $todayPumped = round((float)($row['pumped_volume'] ?? 0), 2);
+    }
+
+    $safeMonthStart = $conn->real_escape_string($selectedMonthStart);
+    $safeMonthEnd = $conn->real_escape_string($selectedMonthEnd);
+    $monthlySelectedPumpedQuery = $conn->query("
+        SELECT SUM(volume_m3) AS pumped_volume
+        FROM pumped_volume_entries
+        WHERE DATE(pumped_date) BETWEEN '$safeMonthStart' AND '$safeMonthEnd'
+    ");
+
+    if($monthlySelectedPumpedQuery && $row = $monthlySelectedPumpedQuery->fetch_assoc()){
+        $monthlyPumped = round((float)($row['pumped_volume'] ?? 0), 2);
+    }
+
+    $safeFyStart = $conn->real_escape_string($financialYearStart);
+    $safeFyEnd = $conn->real_escape_string($financialYearEnd);
+    $financialYearPumpedQuery = $conn->query("
+        SELECT SUM(volume_m3) AS pumped_volume
+        FROM pumped_volume_entries
+        WHERE DATE(pumped_date) BETWEEN '$safeFyStart' AND '$safeFyEnd'
+    ");
+
+    if($financialYearPumpedQuery && $row = $financialYearPumpedQuery->fetch_assoc()){
+        $financialYearPumped = round((float)($row['pumped_volume'] ?? 0), 2);
+    }
 }
 
 if(tableExists($conn, 'meter_applications') && columnExists($conn, 'meter_applications', 'created_at')){
@@ -220,6 +396,41 @@ if(tableExists($conn, 'meter_applications') && columnExists($conn, 'meter_applic
         if(isset($monthlyApplicationsTrend[$row['month_key']])){
             $monthlyApplicationsTrend[$row['month_key']] = (int)$row['total_applications'];
         }
+    }
+
+    $safeToday = $conn->real_escape_string($todayDate);
+    $todayApplicationsQuery = $conn->query("
+        SELECT COUNT(*) AS total_applications
+        FROM meter_applications
+        WHERE DATE(created_at) = '$safeToday'
+    ");
+
+    if($todayApplicationsQuery && $row = $todayApplicationsQuery->fetch_assoc()){
+        $todayApplications = (int)($row['total_applications'] ?? 0);
+    }
+
+    $safeMonthStart = $conn->real_escape_string($selectedMonthStart);
+    $safeMonthEnd = $conn->real_escape_string($selectedMonthEnd);
+    $monthlyApplicationsSelectedQuery = $conn->query("
+        SELECT COUNT(*) AS total_applications
+        FROM meter_applications
+        WHERE DATE(created_at) BETWEEN '$safeMonthStart' AND '$safeMonthEnd'
+    ");
+
+    if($monthlyApplicationsSelectedQuery && $row = $monthlyApplicationsSelectedQuery->fetch_assoc()){
+        $monthlyApplications = (int)($row['total_applications'] ?? 0);
+    }
+
+    $safeFyStart = $conn->real_escape_string($financialYearStart);
+    $safeFyEnd = $conn->real_escape_string($financialYearEnd);
+    $financialYearApplicationsQuery = $conn->query("
+        SELECT COUNT(*) AS total_applications
+        FROM meter_applications
+        WHERE DATE(created_at) BETWEEN '$safeFyStart' AND '$safeFyEnd'
+    ");
+
+    if($financialYearApplicationsQuery && $row = $financialYearApplicationsQuery->fetch_assoc()){
+        $financialYearApplications = (int)($row['total_applications'] ?? 0);
     }
 }
 
@@ -242,12 +453,115 @@ if(tableExists($conn, 'customer_complaints') && columnExists($conn, 'customer_co
             $monthlyComplaintsTrend[$row['month_key']] = (int)$row['total_complaints'];
         }
     }
+
+    $safeToday = $conn->real_escape_string($todayDate);
+    $todayComplaintsQuery = $conn->query("
+        SELECT COUNT(*) AS total_complaints
+        FROM customer_complaints
+        WHERE DATE(created_at) = '$safeToday'
+    ");
+
+    if($todayComplaintsQuery && $row = $todayComplaintsQuery->fetch_assoc()){
+        $todayComplaints = (int)($row['total_complaints'] ?? 0);
+    }
+
+    $safeMonthStart = $conn->real_escape_string($selectedMonthStart);
+    $safeMonthEnd = $conn->real_escape_string($selectedMonthEnd);
+    $monthlyComplaintsSelectedQuery = $conn->query("
+        SELECT COUNT(*) AS total_complaints
+        FROM customer_complaints
+        WHERE DATE(created_at) BETWEEN '$safeMonthStart' AND '$safeMonthEnd'
+    ");
+
+    if($monthlyComplaintsSelectedQuery && $row = $monthlyComplaintsSelectedQuery->fetch_assoc()){
+        $monthlyComplaints = (int)($row['total_complaints'] ?? 0);
+    }
+
+    $safeFyStart = $conn->real_escape_string($financialYearStart);
+    $safeFyEnd = $conn->real_escape_string($financialYearEnd);
+    $financialYearComplaintsQuery = $conn->query("
+        SELECT COUNT(*) AS total_complaints
+        FROM customer_complaints
+        WHERE DATE(created_at) BETWEEN '$safeFyStart' AND '$safeFyEnd'
+    ");
+
+    if($financialYearComplaintsQuery && $row = $financialYearComplaintsQuery->fetch_assoc()){
+        $financialYearComplaints = (int)($row['total_complaints'] ?? 0);
+    }
 }
 
-$monthlyRevenue = $monthlyRevenueTrend[$currentMonthKey] ?? 0;
-$monthlyPumped = $monthlyPumpedTrend[$currentMonthKey] ?? 0;
-$monthlyApplications = $monthlyApplicationsTrend[$currentMonthKey] ?? 0;
-$monthlyComplaints = $monthlyComplaintsTrend[$currentMonthKey] ?? 0;
+$todayWaterLoss = max($todayPumped - $todayBilled, 0);
+$monthlyWaterLoss = max($monthlyPumped - $monthlyBilled, 0);
+$financialYearWaterLoss = max($financialYearPumped - $financialYearBilled, 0);
+
+function revenueBreakdownByZoneAndType($conn, $startDate = '', $endDate = ''){
+    $breakdown = [
+        'total' => 0,
+        'zones' => []
+    ];
+
+    if(
+        !tableExists($conn, 'meter_readings') ||
+        !tableExists($conn, 'meters') ||
+        !columnExists($conn, 'meter_readings', 'reading_date') ||
+        !columnExists($conn, 'meter_readings', 'consumption') ||
+        !columnExists($conn, 'meter_readings', 'meter_id') ||
+        !columnExists($conn, 'meters', 'zone')
+    ){
+        return $breakdown;
+    }
+
+    $typeExpression = columnExists($conn, 'meters', 'customer_type')
+        ? "COALESCE(NULLIF(m.customer_type, ''), 'Unknown')"
+        : "'Unknown'";
+
+    $where = "";
+
+    if($startDate !== '' && $endDate !== ''){
+        $safeStart = $conn->real_escape_string($startDate);
+        $safeEnd = $conn->real_escape_string($endDate);
+        $where = "WHERE DATE(r.reading_date) BETWEEN '$safeStart' AND '$safeEnd'";
+    }
+
+    $query = $conn->query("
+        SELECT
+            COALESCE(NULLIF(m.zone, ''), 'Unknown') AS zone_name,
+            $typeExpression AS customer_type_name,
+            SUM(r.consumption * 20) AS revenue
+        FROM meter_readings r
+        INNER JOIN meters m
+            ON r.meter_id = m.id
+        $where
+        GROUP BY
+            COALESCE(NULLIF(m.zone, ''), 'Unknown'),
+            $typeExpression
+        ORDER BY revenue DESC
+    ");
+
+    while($query && $row = $query->fetch_assoc()){
+        $zone = $row['zone_name'] ?: 'Unknown';
+        $customerType = $row['customer_type_name'] ?: 'Unknown';
+        $revenue = round((float)($row['revenue'] ?? 0), 2);
+
+        if(!isset($breakdown['zones'][$zone])){
+            $breakdown['zones'][$zone] = [
+                'revenue' => 0,
+                'customer_types' => []
+            ];
+        }
+
+        $breakdown['zones'][$zone]['revenue'] += $revenue;
+        $breakdown['zones'][$zone]['customer_types'][$customerType] = $revenue;
+        $breakdown['total'] += $revenue;
+    }
+
+    return $breakdown;
+}
+
+$todayRevenueBreakdown = revenueBreakdownByZoneAndType($conn, $todayDate, $todayDate);
+$monthlyRevenueBreakdown = revenueBreakdownByZoneAndType($conn, $selectedMonthStart, $selectedMonthEnd);
+$financialYearRevenueBreakdown = revenueBreakdownByZoneAndType($conn, $financialYearStart, $financialYearEnd);
+$overallRevenueBreakdown = revenueBreakdownByZoneAndType($conn);
 
 /* ================= ZONE SUMMARY ================= */
 
@@ -373,6 +687,46 @@ if(!empty($zoneRevenue)){
     font-weight:700;
 }
 
+.today-panel .monthly-range{
+    color:#166534;
+    background:#ecfdf3;
+    border-color:#bbf7d0;
+}
+
+.financial-year-panel .monthly-range{
+    color:#713f12;
+    background:#fffbeb;
+    border-color:#fde68a;
+}
+
+.analytics-selector{
+    display:flex;
+    gap:8px;
+    align-items:center;
+    flex-wrap:wrap;
+}
+
+.analytics-selector select{
+    border:1px solid #dbeafe;
+    border-radius:999px;
+    padding:8px 12px;
+    color:#1e3a8a;
+    background:#fff;
+    font-size:12px;
+    font-weight:700;
+}
+
+.analytics-selector button{
+    border:none;
+    border-radius:999px;
+    padding:8px 12px;
+    color:#fff;
+    background:#0a2a43;
+    font-size:12px;
+    font-weight:800;
+    cursor:pointer;
+}
+
 .monthly-grid{
     display:grid;
     grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
@@ -382,8 +736,35 @@ if(!empty($zoneRevenue)){
 .monthly-item{
     background:#f8fafc;
     border:1px solid #e2e8f0;
+    border-left:5px solid #16a34a;
     border-radius:14px;
     padding:15px;
+}
+
+.monthly-item:nth-child(2){
+    border-left-color:#1e3a8a;
+}
+
+.monthly-item:nth-child(3){
+    border-left-color:#eab308;
+}
+
+.monthly-item:nth-child(4){
+    border-left-color:#16a34a;
+}
+
+.monthly-item:nth-child(5){
+    border-left-color:#1e3a8a;
+}
+
+.drillable-card{
+    cursor:pointer;
+    transition:0.2s ease;
+}
+
+.drillable-card:hover{
+    transform:translateY(-2px);
+    box-shadow:0 8px 18px rgba(15,23,42,0.08);
 }
 
 .monthly-label{
@@ -414,7 +795,7 @@ if(!empty($zoneRevenue)){
 }
 
 .kpi-card{
-    background:white;
+    background:#ffffff;
     border-radius:18px;
     padding:22px;
     border:1px solid #e2e8f0;
@@ -426,29 +807,48 @@ if(!empty($zoneRevenue)){
 
 .kpi-card:hover{
     transform:translateY(-3px);
+    box-shadow:0 8px 18px rgba(15,23,42,0.08);
 }
 
-.kpi-green{ border-left-color:#16a34a; }
-.kpi-yellow{ border-left-color:#eab308; }
-.kpi-blue{ border-left-color:#1e3a8a; }
+.kpi-green{
+    border-left-color:#16a34a;
+}
+
+.kpi-yellow{
+    border-left-color:#eab308;
+}
+
+.kpi-blue{
+    border-left-color:#1e3a8a;
+}
 
 .kpi-title{
     color:#64748b;
     font-size:14px;
     margin-bottom:12px;
+    font-weight:700;
 }
 
 .kpi-value{
     font-size:30px;
-    font-weight:700;
+    font-weight:800;
     color:#0f172a;
+    line-height:1.1;
 }
 
 .kpi-change{
     margin-top:10px;
     color:#16a34a;
     font-size:13px;
-    font-weight:600;
+    font-weight:700;
+}
+
+.kpi-blue .kpi-change{
+    color:#1e3a8a;
+}
+
+.kpi-yellow .kpi-change{
+    color:#a16207;
 }
 
 /* ================= GRID ================= */
@@ -715,6 +1115,22 @@ tr:hover{
     border-bottom:none;
 }
 
+.customer-type-row{
+    display:flex;
+    justify-content:space-between;
+    gap:12px;
+    padding:8px 0;
+    border-top:1px solid #e2e8f0;
+}
+
+.customer-type-row span{
+    color:#475569;
+}
+
+.customer-type-row strong{
+    color:#0f172a;
+}
+
 .report-section{
     margin-top:24px;
     background:#f8fafc;
@@ -767,6 +1183,59 @@ tr:hover{
 
 </div>
 
+<!-- ================= TODAY ANALYTICS ================= -->
+
+<div class="monthly-panel today-panel">
+
+    <div class="monthly-panel-header">
+        <div>
+            <div class="monthly-panel-title">Today's Analytics</div>
+            <div class="monthly-panel-subtitle">
+                Daily operational snapshot for the date shown on the dashboard
+            </div>
+        </div>
+
+        <div class="monthly-range">
+            <?= htmlspecialchars($todayLabel); ?>
+        </div>
+    </div>
+
+    <div class="monthly-grid">
+
+        <div class="monthly-item drillable-card" onclick="showRevenue('today')">
+            <div class="monthly-label">Today's Revenue</div>
+            <div class="monthly-value">KES <?= number_format($todayRevenue); ?></div>
+            <div class="monthly-note">From meter readings recorded today. Click to view zone collections.</div>
+        </div>
+
+        <div class="monthly-item">
+            <div class="monthly-label">Pumped Volume</div>
+            <div class="monthly-value"><?= number_format($todayPumped, 2); ?> m&sup3;</div>
+            <div class="monthly-note">Production volume recorded today</div>
+        </div>
+
+        <div class="monthly-item">
+            <div class="monthly-label">Water Loss</div>
+            <div class="monthly-value"><?= number_format($todayWaterLoss, 2); ?> m&sup3;</div>
+            <div class="monthly-note">Pumped volume less billed consumption today</div>
+        </div>
+
+        <div class="monthly-item">
+            <div class="monthly-label">Meter Applications</div>
+            <div class="monthly-value"><?= number_format($todayApplications); ?></div>
+            <div class="monthly-note">New applications submitted today</div>
+        </div>
+
+        <div class="monthly-item">
+            <div class="monthly-label">Customer Complaints</div>
+            <div class="monthly-value"><?= number_format($todayComplaints); ?></div>
+            <div class="monthly-note">Complaints raised today</div>
+        </div>
+
+    </div>
+
+</div>
+
 <!-- ================= MONTHLY ANALYTICS ================= -->
 
 <div class="monthly-panel">
@@ -775,27 +1244,44 @@ tr:hover{
         <div>
             <div class="monthly-panel-title">Monthly Analytics</div>
             <div class="monthly-panel-subtitle">
-                Current month operational snapshot.
+                Selected month operational snapshot while retaining today's dashboard date
             </div>
         </div>
 
-        <div class="monthly-range">
-            <?= htmlspecialchars($currentMonthName); ?>
-        </div>
+        <form method="GET" action="dashboard.php" class="analytics-selector">
+            <input type="hidden" name="page" value="modules/home.php">
+            <input type="hidden" name="analytics_fy" value="<?= (int)$financialYearStartYear ?>">
+
+            <select name="analytics_month">
+                <?php foreach($financialYearMonthOptions as $monthKey => $monthLabel): ?>
+                    <option value="<?= htmlspecialchars($monthKey) ?>" <?= $selectedMonthKey === $monthKey ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($monthLabel) ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+
+            <button type="submit">Apply</button>
+        </form>
     </div>
 
     <div class="monthly-grid">
 
-        <div class="monthly-item">
+        <div class="monthly-item drillable-card" onclick="showRevenue('monthly')">
             <div class="monthly-label">Monthly Revenue</div>
             <div class="monthly-value">KES <?= number_format($monthlyRevenue); ?></div>
-            <div class="monthly-note">From meter readings this month</div>
+            <div class="monthly-note">From meter readings for <?= htmlspecialchars($selectedMonthName); ?>. Click to view zone collections.</div>
         </div>
 
         <div class="monthly-item">
             <div class="monthly-label">Pumped Volume</div>
-            <div class="monthly-value"><?= number_format($monthlyPumped, 2); ?> m³</div>
-            <div class="monthly-note">Total production volume this month</div>
+            <div class="monthly-value"><?= number_format($monthlyPumped, 2); ?> m&sup3;</div>
+            <div class="monthly-note">Total production volume for <?= htmlspecialchars($selectedMonthName); ?></div>
+        </div>
+
+        <div class="monthly-item">
+            <div class="monthly-label">Water Loss</div>
+            <div class="monthly-value"><?= number_format($monthlyWaterLoss, 2); ?> m&sup3;</div>
+            <div class="monthly-note">Pumped volume less billed consumption for <?= htmlspecialchars($selectedMonthName); ?></div>
         </div>
 
         <div class="monthly-item">
@@ -814,32 +1300,66 @@ tr:hover{
 
 </div>
 
-<!-- ================= KPI ================= -->
+<!-- ================= FINANCIAL YEAR ANALYTICS ================= -->
 
-<div class="kpi-grid">
+<div class="monthly-panel financial-year-panel">
 
-    <div class="kpi-card kpi-green" onclick="showRevenue()">
-        <div class="kpi-title">Revenue Collection</div>
-        <div class="kpi-value">KES <?= number_format($totalRevenue); ?></div>
-        <div class="kpi-change">+8% This Month</div>
+    <div class="monthly-panel-header">
+        <div>
+            <div class="monthly-panel-title">Financial Year Analytics</div>
+            <div class="monthly-panel-subtitle">
+                Configured financial year cycle: <?= htmlspecialchars($financialYearConfigLabel); ?>
+            </div>
+        </div>
+
+        <form method="GET" action="dashboard.php" class="analytics-selector">
+            <input type="hidden" name="page" value="modules/home.php">
+            <input type="hidden" name="analytics_month" value="<?= htmlspecialchars($selectedMonthKey) ?>">
+
+            <select name="analytics_fy">
+                <?php foreach($financialYearOptions as $fyStartYear): ?>
+                    <option value="<?= (int)$fyStartYear ?>" <?= $financialYearStartYear === $fyStartYear ? 'selected' : '' ?>>
+                        FY <?= (int)$fyStartYear ?>/<?= (int)$fyStartYear + 1 ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+
+            <button type="submit">Apply</button>
+        </form>
     </div>
 
-    <div class="kpi-card kpi-blue" onclick="showMeters('active')">
-        <div class="kpi-title">Active Smart Meters</div>
-        <div class="kpi-value"><?= number_format($activeCount); ?></div>
-        <div class="kpi-change">Operational Coverage</div>
-    </div>
+    <div class="monthly-grid">
 
-    <div class="kpi-card kpi-yellow" onclick="showMeters('inactive')">
-        <div class="kpi-title">Inactive Meters</div>
-        <div class="kpi-value"><?= number_format($inactiveCount); ?></div>
-        <div class="kpi-change">Requires Attention</div>
-    </div>
+        <div class="monthly-item drillable-card" onclick="showRevenue('financialYear')">
+            <div class="monthly-label">FY Revenue</div>
+            <div class="monthly-value">KES <?= number_format($financialYearRevenue); ?></div>
+            <div class="monthly-note">Revenue from meter readings in this financial year. Click to view zone collections.</div>
+        </div>
 
-    <div class="kpi-card kpi-green">
-        <div class="kpi-title">Collection Efficiency</div>
-        <div class="kpi-value"><?= $collectionRate; ?>%</div>
-        <div class="kpi-change">Billing Performance</div>
+        <div class="monthly-item">
+            <div class="monthly-label">FY Pumped Volume</div>
+            <div class="monthly-value"><?= number_format($financialYearPumped, 2); ?> m&sup3;</div>
+            <div class="monthly-note">Production volume in this financial year</div>
+        </div>
+
+        <div class="monthly-item">
+            <div class="monthly-label">FY Water Loss</div>
+            <div class="monthly-value"><?= number_format($financialYearWaterLoss, 2); ?> m&sup3;</div>
+            <div class="monthly-note">Pumped volume less billed consumption in this financial year</div>
+        </div>
+
+        <div class="monthly-item">
+            <div class="monthly-label">FY Meter Applications</div>
+            <div class="monthly-value"><?= number_format($financialYearApplications); ?></div>
+            <div class="monthly-note">Applications submitted in this financial year</div>
+        </div>
+
+        <div class="monthly-item">
+            <div class="monthly-label">FY Customer Complaints</div>
+            <div class="monthly-value"><?= number_format($financialYearComplaints); ?></div>
+            <div class="monthly-note">Complaints raised in this financial year</div>
+        </div>
+
     </div>
 
 </div>
@@ -856,9 +1376,6 @@ tr:hover{
                 <div class="card-subtitle">Database-driven monthly utility performance trend</div>
             </div>
 
-            <button class="action-btn" onclick="showFullIntelligenceReport()">
-                Export Report
-            </button>
         </div>
 
         <div class="chart-box">
@@ -909,7 +1426,7 @@ tr:hover{
             </div>
         </div>
 
-        <button class="action-btn" onclick="showRevenue()">
+        <button class="action-btn" onclick="showZoneOperations()">
             Open Intelligence Center
         </button>
 
@@ -1080,7 +1597,31 @@ tr:hover{
 
 const activeByZone = <?php echo json_encode($activeByZone); ?>;
 const inactiveByZone = <?php echo json_encode($inactiveByZone); ?>;
+const metersByZone = <?php echo json_encode($metersByZone); ?>;
 const zoneRevenue = <?php echo json_encode($zoneRevenue); ?>;
+
+const revenueDrilldowns = {
+    today: {
+        title: "Today's Revenue Collection",
+        label: <?= json_encode($todayLabel); ?>,
+        data: <?= json_encode($todayRevenueBreakdown); ?>
+    },
+    monthly: {
+        title: "Monthly Revenue Collection",
+        label: <?= json_encode($selectedMonthName); ?>,
+        data: <?= json_encode($monthlyRevenueBreakdown); ?>
+    },
+    financialYear: {
+        title: "Financial Year Revenue Collection",
+        label: <?= json_encode($financialYearLabel); ?>,
+        data: <?= json_encode($financialYearRevenueBreakdown); ?>
+    },
+    overall: {
+        title: "Revenue Intelligence",
+        label: "All available records",
+        data: <?= json_encode($overallRevenueBreakdown); ?>
+    }
+};
 
 const dashboardIntel = {
     totalRevenue: <?= json_encode($totalRevenue); ?>,
@@ -1108,36 +1649,51 @@ const monthlyAnalytics = {
 
 /* ================= REVENUE DRILL ================= */
 
-function showRevenue(){
+function showRevenue(scope = 'overall'){
+    const drill = revenueDrilldowns[scope] || revenueDrilldowns.overall;
+    const zones = drill.data && drill.data.zones ? drill.data.zones : {};
+    const total = drill.data && drill.data.total ? Number(drill.data.total) : 0;
+    const zoneNames = Object.keys(zones);
 
     let html = `
 
-    <h2>Revenue Intelligence</h2>
+    <h2>${drill.title}</h2>
+
+    <div class="report-section">
+        <strong>Period:</strong> ${drill.label}<br>
+        <strong>Total Collection:</strong> KES ${total.toLocaleString()}
+    </div>
 
     <div class="drill-grid">
 
         ${
-            Object.keys(zoneRevenue).map(zone => `
+            zoneNames.length
+            ? zoneNames.map(zone => `
 
                 <div class="drill-card">
 
                     <h4>${zone}</h4>
 
                     <div class="drill-item">
-                        Revenue:<br>
+                        Zone Collection:<br>
                         <strong style="color:#166534;font-size:16px;">
-                            KES ${Number(zoneRevenue[zone]).toLocaleString()}
+                            KES ${Number(zones[zone].revenue || 0).toLocaleString()}
                         </strong>
                     </div>
 
                     <div class="drill-item">
-                        Active Meters:
-                        ${activeByZone[zone] ? activeByZone[zone].length : 0}
-                    </div>
+                        <strong>Collection by Customer Type</strong>
 
-                    <div class="drill-item">
-                        Inactive Meters:
-                        ${inactiveByZone[zone] ? inactiveByZone[zone].length : 0}
+                        ${
+                            Object.keys(zones[zone].customer_types || {}).length
+                            ? Object.keys(zones[zone].customer_types).map(type => `
+                                <div class="customer-type-row">
+                                    <span>${type}</span>
+                                    <strong>KES ${Number(zones[zone].customer_types[type] || 0).toLocaleString()}</strong>
+                                </div>
+                            `).join('')
+                            : `<div class="customer-type-row"><span>No customer type collection found.</span></div>`
+                        }
                     </div>
 
                     <div class="drill-item">
@@ -1149,10 +1705,81 @@ function showRevenue(){
                 </div>
 
             `).join('')
+            : `<div class="drill-card"><h4>No collection records found</h4><div class="drill-item">No meter reading revenue is available for this period.</div></div>`
         }
 
     </div>
 
+    `;
+
+    document.getElementById("modalBody").innerHTML = html;
+    document.getElementById("modal").style.display = "block";
+}
+
+/* ================= ZONE OPERATIONS ================= */
+
+function showZoneOperations(){
+    const zones = Object.keys(metersByZone);
+
+    let html = `
+        <h2>Zone Intelligence Center</h2>
+
+        <div class="report-section">
+            This view focuses only on zone structure: total meters, customer type spread, active meters, and inactive meters.
+        </div>
+
+        <div class="drill-grid">
+            ${
+                zones.length
+                ? zones.map(zone => {
+                    const meters = metersByZone[zone] || [];
+                    const active = activeByZone[zone] || [];
+                    const inactive = inactiveByZone[zone] || [];
+                    const customerTypes = {};
+
+                    meters.forEach(function(meter){
+                        const type = meter.customer_type && String(meter.customer_type).trim() !== ''
+                            ? meter.customer_type
+                            : 'Unknown';
+
+                        customerTypes[type] = (customerTypes[type] || 0) + 1;
+                    });
+
+                    return `
+                        <div class="drill-card">
+                            <h4>${zone}</h4>
+
+                            <div class="drill-item">
+                                <strong>Total Meters:</strong> ${meters.length.toLocaleString()}
+                            </div>
+
+                            <div class="drill-item">
+                                <strong>Active Meters:</strong> ${active.length.toLocaleString()}
+                            </div>
+
+                            <div class="drill-item">
+                                <strong>Inactive Meters:</strong> ${inactive.length.toLocaleString()}
+                            </div>
+
+                            <div class="drill-item">
+                                <strong>Customer Types</strong>
+                                ${
+                                    Object.keys(customerTypes).length
+                                    ? Object.keys(customerTypes).map(type => `
+                                        <div class="customer-type-row">
+                                            <span>${type}</span>
+                                            <strong>${customerTypes[type].toLocaleString()}</strong>
+                                        </div>
+                                    `).join('')
+                                    : `<div class="customer-type-row"><span>No customer type records found.</span></div>`
+                                }
+                            </div>
+                        </div>
+                    `;
+                }).join('')
+                : `<div class="drill-card"><h4>No zone records found</h4><div class="drill-item">No meters are available for zone analysis.</div></div>`
+            }
+        </div>
     `;
 
     document.getElementById("modalBody").innerHTML = html;

@@ -76,6 +76,25 @@ function logAction($conn, $caseType, $caseId, $action, $oldStatus, $newStatus, $
     $stmt->execute();
 }
 
+function ensureCustomerCaseUpdatesTable($conn) {
+    $conn->query("
+        CREATE TABLE IF NOT EXISTS customer_case_updates (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            case_type VARCHAR(80) NOT NULL,
+            case_id INT NOT NULL,
+            action_taken VARCHAR(150) NOT NULL,
+            old_status VARCHAR(80) NULL,
+            new_status VARCHAR(80) NULL,
+            staff_name VARCHAR(150) NULL,
+            notes TEXT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX(case_type),
+            INDEX(case_id),
+            INDEX(created_at)
+        )
+    ");
+}
+
 function assignMeterSerialToApplicant($conn, $applicationId, $meterSerial, $status, $installationDate) {
     $meterSerial = trim((string)$meterSerial);
 
@@ -146,7 +165,7 @@ function assignMeterSerialToApplicant($conn, $applicationId, $meterSerial, $stat
 addColumnIfMissing($conn, 'meter_applications', 'assigned_staff', "VARCHAR(100) NULL");
 addColumnIfMissing($conn, 'meter_applications', 'response', "TEXT NULL");
 addColumnIfMissing($conn, 'meter_applications', 'rejection_reason', "TEXT NULL");
-addColumnIfMissing($conn, 'meter_applications', 'meter_serial', "VARCHAR(100) NULL");
+addColumnIfMissing($conn, 'meter_applications', 'serial_number', "VARCHAR(100) NULL");
 addColumnIfMissing($conn, 'meter_applications', 'installation_date', "DATE NULL");
 addColumnIfMissing($conn, 'meter_applications', 'reviewed_at', "DATETIME NULL");
 addColumnIfMissing($conn, 'meter_applications', 'updated_at', "TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
@@ -160,11 +179,14 @@ addColumnIfMissing($conn, 'customer_complaints', 'response', "TEXT NULL");
 addColumnIfMissing($conn, 'customer_complaints', 'due_date', "DATE NULL");
 addColumnIfMissing($conn, 'customer_complaints', 'resolution_notes', "TEXT NULL");
 addColumnIfMissing($conn, 'customer_complaints', 'escalation_reason', "TEXT NULL");
+addColumnIfMissing($conn, 'customer_complaints', 'evidence_file', "VARCHAR(255) NULL");
 addColumnIfMissing($conn, 'customer_complaints', 'updated_at', "TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
 
 addColumnIfMissing($conn, 'water_rationing_schedule', 'source', "VARCHAR(150) NULL");
 addColumnIfMissing($conn, 'water_rationing_schedule', 'notice_type', "VARCHAR(100) NULL DEFAULT 'Rationing'");
 addColumnIfMissing($conn, 'water_rationing_schedule', 'updated_at', "TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+
+ensureCustomerCaseUpdatesTable($conn);
 
 /* ================= ACTION HANDLING ================= */
 
@@ -188,7 +210,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['crm_action'])) {
 
         $stmt = $conn->prepare("
             UPDATE meter_applications
-            SET status=?, assigned_staff=?, response=?, meter_serial=?, installation_date=?, reviewed_at=NOW()
+            SET status=?, assigned_staff=?, response=?, serial_number=?, installation_date=?, reviewed_at=NOW()
             WHERE id=?
         ");
         $stmt->bind_param("sssssi", $status, $assigned, $response, $meter_serial, $installation_date, $id);
@@ -388,11 +410,11 @@ $approvedApps = countRows($conn, 'meter_applications', "($appCondition) AND stat
 $rejectedApps = countRows($conn, 'meter_applications', "($appCondition) AND status='Rejected'");
 
 $totalEnquiries = countRows($conn, 'customer_enquiries', $enquiryCondition);
-$openEnquiries = countRows($conn, 'customer_enquiries', "($enquiryCondition) AND status IN ('Submitted','Open','In Progress')");
+$openEnquiries = countRows($conn, 'customer_enquiries', "($enquiryCondition) AND status IN ('Submitted','Open','Assigned','In Progress','Escalated','Escalated to MD','Returned to Checker')");
 $closedEnquiries = countRows($conn, 'customer_enquiries', "($enquiryCondition) AND status IN ('Closed','Resolved')");
 
 $totalComplaints = countRows($conn, 'customer_complaints', $complaintCondition);
-$openComplaints = countRows($conn, 'customer_complaints', "($complaintCondition) AND status IN ('Submitted','Assigned','In Progress','Escalated')");
+$openComplaints = countRows($conn, 'customer_complaints', "($complaintCondition) AND status IN ('Submitted','Assigned','In Progress','Escalated','Escalated to MD','Returned to Checker')");
 $resolvedComplaints = countRows($conn, 'customer_complaints', "($complaintCondition) AND status IN ('Resolved','Closed')");
 $escalatedComplaints = countRows($conn, 'customer_complaints', "($complaintCondition) AND status='Escalated'");
 
@@ -417,7 +439,7 @@ $updates = tableExists($conn, 'customer_case_updates') ? $conn->query("SELECT * 
     <div class="page-header">
         <div>
             <h2>Customer Management Center</h2>
-            <p>Back-office customer service, applications, enquiries, complaints, assignments, notices and audit intelligence.</p>
+            <p>Back-office customer service, applications, enquiries, complaints, assignments and notices.</p>
         </div>
 
         <div class="header-badge">
@@ -429,34 +451,6 @@ $updates = tableExists($conn, 'customer_case_updates') ? $conn->query("SELECT * 
 
     <div id="toastHost" class="toast-host" aria-live="polite" aria-atomic="true"></div>
 
-    <div class="kpis">
-
-        <div class="kpi blue">
-            <h3><?= number_format($totalCases) ?></h3>
-            <p>Total Customer Cases</p>
-            <small>Applications, enquiries and complaints</small>
-        </div>
-
-        <div class="kpi yellow">
-            <h3><?= number_format($openCases) ?></h3>
-            <p>Open / Pending Cases</p>
-            <small>Requires back-office follow-up</small>
-        </div>
-
-        <div class="kpi red">
-            <h3><?= number_format($escalatedComplaints) ?></h3>
-            <p>Escalated Complaints</p>
-            <small>Immediate attention recommended</small>
-        </div>
-
-        <div class="kpi">
-            <h3><?= number_format($resolvedCases) ?></h3>
-            <p>Resolved / Approved</p>
-            <small>Completed customer actions</small>
-        </div>
-
-    </div>
-
     <form class="filters" method="GET" action="dashboard.php">
 
         <input type="hidden" name="page" value="<?= clean($currentPage) ?>">
@@ -466,7 +460,7 @@ $updates = tableExists($conn, 'customer_case_updates') ? $conn->query("SELECT * 
         <select name="status">
             <option value="">All Statuses</option>
             <?php
-            $statuses = ['Pending','Submitted','Under Review','More Information Required','Approved','Rejected','Assigned','In Progress','Escalated','Resolved','Closed','Completed'];
+            $statuses = ['Pending','Submitted','Under Review','More Information Required','Approved','Rejected','Assigned','In Progress','Escalated','Escalated to MD','Returned to Checker','Resolved','Closed','Completed'];
             foreach ($statuses as $s):
             ?>
                 <option value="<?= clean($s) ?>" <?= $statusFilter === $s ? 'selected' : '' ?>>
@@ -499,10 +493,6 @@ $updates = tableExists($conn, 'customer_case_updates') ? $conn->query("SELECT * 
 
         <button type="button" class="tab-btn" onclick="openCrmTab(event,'rationing')">
             Water Rationing
-        </button>
-
-        <button type="button" class="tab-btn" onclick="openCrmTab(event,'audit')">
-            Audit Trail
         </button>
 
     </div>
@@ -544,7 +534,7 @@ $updates = tableExists($conn, 'customer_case_updates') ? $conn->query("SELECT * 
                                     <div>
                                         <span>Meter</span>
                                         <strong><?= clean($a['meter_type']) ?></strong>
-                                        <small><?= clean($a['customer_type']) ?> | Serial: <?= clean($a['meter_serial'] ?? 'N/A') ?></small>
+                                        <small><?= clean($a['customer_type']) ?> | Serial: <?= clean($a['serial_number'] ?? 'N/A') ?></small>
                                     </div>
 
                                     <div>
@@ -669,6 +659,13 @@ $updates = tableExists($conn, 'customer_case_updates') ? $conn->query("SELECT * 
                                     <div>
                                         <span>Assigned Staff</span>
                                         <strong><?= clean($c['assigned_staff'] ?? 'Unassigned') ?></strong>
+                                        <?php if (!empty($c['evidence_file'])): ?>
+                                            <small>
+                                                <a class="link-btn" href="<?= clean(publicFileUrl($c['evidence_file'])) ?>" target="_blank" rel="noopener">View Evidence</a>
+                                            </small>
+                                        <?php else: ?>
+                                            <small>No evidence file</small>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
 
@@ -813,42 +810,6 @@ $updates = tableExists($conn, 'customer_case_updates') ? $conn->query("SELECT * 
 
             </div>
 
-            <!-- AUDIT -->
-
-            <div id="audit" class="tab-section">
-
-                <h3 class="section-title">Audit Trail</h3>
-
-                <div class="insight-box">
-                    Recent back-office actions on applications, enquiries and complaints.
-                </div>
-
-                <div class="audit-list">
-                    <?php if ($updates && $updates->num_rows > 0): ?>
-                        <?php while ($u = $updates->fetch_assoc()): ?>
-                            <div class="audit-card">
-                                <div class="audit-topline">
-                                    <strong><?= clean($u['case_type']) ?></strong>
-                                    <span><?= clean($u['created_at']) ?></span>
-                                </div>
-
-                                <div class="audit-action"><?= clean($u['action_taken']) ?></div>
-
-                                <div class="audit-meta">
-                                    <span><?= clean($u['old_status']) ?> &rarr; <?= clean($u['new_status']) ?></span>
-                                    <span><?= clean($u['staff_name']) ?></span>
-                                </div>
-
-                                <p><?= clean($u['notes']) ?></p>
-                            </div>
-                        <?php endwhile; ?>
-                    <?php else: ?>
-                        <div class="empty-state">No audit records found.</div>
-                    <?php endif; ?>
-                </div>
-
-            </div>
-
         </div>
 
         <!-- RIGHT ALERT PANEL -->
@@ -913,7 +874,7 @@ $updates = tableExists($conn, 'customer_case_updates') ? $conn->query("SELECT * 
                 2. Assign pending meter applications.<br>
                 3. Respond to open enquiries.<br>
                 4. Keep rationing notices updated.<br>
-                5. Use the audit trail to track staff actions.
+                5. Escalate cases that need checker or MD review.
             </div>
 
         </div>
@@ -1042,7 +1003,11 @@ $updates = tableExists($conn, 'customer_case_updates') ? $conn->query("SELECT * 
                     <select name="status" id="enquiry_status">
                         <option>Submitted</option>
                         <option>Open</option>
+                        <option>Assigned</option>
                         <option>In Progress</option>
+                        <option>Escalated</option>
+                        <option>Escalated to MD</option>
+                        <option>Returned to Checker</option>
                         <option>Resolved</option>
                         <option>Closed</option>
                     </select>
@@ -1091,6 +1056,8 @@ $updates = tableExists($conn, 'customer_case_updates') ? $conn->query("SELECT * 
                         <option>Assigned</option>
                         <option>In Progress</option>
                         <option>Escalated</option>
+                        <option>Escalated to MD</option>
+                        <option>Returned to Checker</option>
                         <option>Resolved</option>
                         <option>Closed</option>
                     </select>
@@ -1370,18 +1337,18 @@ button,
 
 .grid{
     display:grid;
-    grid-template-columns:minmax(0,1fr) 340px;
+    grid-template-columns:minmax(0,1fr) 320px;
     gap:20px;
     margin-top:24px;
 }
 
 .panel{
     min-width:0;
-    background:white;
-    border-radius:16px;
-    border:1px solid #e2e8f0;
-    padding:20px;
-    box-shadow:0 4px 14px rgba(15,23,42,0.03);
+    background:transparent;
+    border-radius:0;
+    border:none;
+    padding:0;
+    box-shadow:none;
 }
 
 .tab-section{
@@ -1401,19 +1368,29 @@ button,
 .case-list,
 .audit-list{
     display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
-    gap:14px;
+    grid-template-columns:1fr;
+    gap:0;
     margin-top:16px;
+    border:1px solid #e2e8f0;
+    border-radius:10px;
+    overflow:hidden;
+    background:#fff;
 }
 
 .case-card,
 .audit-card{
-    border:1px solid #e2e8f0;
-    border-radius:14px;
+    border:none;
+    border-bottom:1px solid #e2e8f0;
+    border-radius:0;
     background:#fff;
-    padding:16px;
-    box-shadow:0 4px 14px rgba(15,23,42,0.04);
+    padding:14px;
+    box-shadow:none;
     min-width:0;
+}
+
+.case-card:last-child,
+.audit-card:last-child{
+    border-bottom:none;
 }
 
 .case-card-head,
@@ -1451,11 +1428,16 @@ button,
 }
 
 .case-summary div{
-    background:#f8fafc;
-    border:1px solid #eef2f7;
-    border-radius:10px;
-    padding:10px;
+    background:transparent;
+    border:none;
+    border-right:1px solid #eef2f7;
+    border-radius:0;
+    padding:4px 10px 4px 0;
     min-width:0;
+}
+
+.case-summary div:last-child{
+    border-right:none;
 }
 
 .case-summary span{
@@ -1518,10 +1500,11 @@ button,
 }
 
 .audit-meta span{
-    background:#f8fafc;
-    border:1px solid #eef2f7;
-    border-radius:999px;
-    padding:6px 10px;
+    background:transparent;
+    border:none;
+    border-right:1px solid #e2e8f0;
+    border-radius:0;
+    padding:0 10px 0 0;
     color:#475569;
     font-size:12px;
     font-weight:700;
@@ -1537,17 +1520,26 @@ button,
 
 .rationing-list{
     display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
-    gap:14px;
+    grid-template-columns:1fr;
+    gap:0;
     margin-top:16px;
+    border:1px solid #e2e8f0;
+    border-radius:10px;
+    overflow:hidden;
+    background:#fff;
 }
 
 .rationing-card{
-    border:1px solid #e2e8f0;
-    border-radius:14px;
+    border:none;
+    border-bottom:1px solid #e2e8f0;
+    border-radius:0;
     background:#fff;
-    padding:16px;
-    box-shadow:0 4px 14px rgba(15,23,42,0.04);
+    padding:14px;
+    box-shadow:none;
+}
+
+.rationing-card:last-child{
+    border-bottom:none;
 }
 
 .rationing-card-head{
@@ -1581,11 +1573,16 @@ button,
 }
 
 .rationing-details div{
-    background:#f8fafc;
-    border:1px solid #eef2f7;
-    border-radius:10px;
-    padding:10px;
+    background:transparent;
+    border:none;
+    border-right:1px solid #eef2f7;
+    border-radius:0;
+    padding:4px 10px 4px 0;
     min-width:0;
+}
+
+.rationing-details div:last-child{
+    border-right:none;
 }
 
 .rationing-details span{
@@ -1609,10 +1606,11 @@ button,
     color:#475569;
     font-size:13px;
     line-height:1.6;
-    background:#fbfdff;
-    border:1px solid #eef2f7;
-    border-radius:10px;
-    padding:12px;
+    background:transparent;
+    border:none;
+    border-top:1px solid #eef2f7;
+    border-radius:0;
+    padding:12px 0 0;
 }
 
 .rationing-actions{
@@ -2072,7 +2070,7 @@ function openApplicationModal(data){
     document.getElementById("app_status").value = data.status || "Pending";
     document.getElementById("app_assigned").value = data.assigned_staff || "";
     document.getElementById("app_response").value = data.response || "";
-    document.getElementById("app_meter_serial").value = data.meter_serial || "";
+    document.getElementById("app_meter_serial").value = data.serial_number || "";
     document.getElementById("app_installation_date").value = data.installation_date || "";
     document.getElementById("applicationModal").style.display = "block";
     notify('Meter application', 'Application details opened for editing.', 'blue');

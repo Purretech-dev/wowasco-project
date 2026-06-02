@@ -48,6 +48,74 @@ ensureColumn($conn, 'assets', 'number_plate', 'VARCHAR(50) NULL');
 ensureColumn($conn, 'assets', 'date_purchased', 'DATE NULL');
 ensureColumn($conn, 'assets', 'status', 'VARCHAR(100) NULL');
 
+function ensureDeactivationRequestsTable($conn){
+
+    $conn->query("
+        CREATE TABLE IF NOT EXISTS deactivation_requests (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            item_type VARCHAR(30) NOT NULL,
+            item_id INT NOT NULL,
+            item_label VARCHAR(255) NULL,
+            requested_by INT NULL,
+            requester_name VARCHAR(150) NULL,
+            request_reason TEXT NOT NULL,
+            request_notes TEXT NULL,
+            attachment_path VARCHAR(255) NULL,
+            checker_id INT NULL,
+            checker_name VARCHAR(150) NULL,
+            checker_decision VARCHAR(50) NULL,
+            checker_notes TEXT NULL,
+            checked_at DATETIME NULL,
+            approver_id INT NULL,
+            approver_name VARCHAR(150) NULL,
+            approver_decision VARCHAR(50) NULL,
+            approver_notes TEXT NULL,
+            approved_at DATETIME NULL,
+            final_status VARCHAR(80) DEFAULT 'Pending Check',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX(item_type),
+            INDEX(item_id),
+            INDEX(final_status)
+        )
+    ");
+}
+
+function saveDeactivationAttachment($fieldName){
+
+    if(empty($_FILES[$fieldName]['name']) || $_FILES[$fieldName]['error'] !== UPLOAD_ERR_OK){
+
+        return '';
+    }
+
+    $allowed = ['jpg','jpeg','png','pdf'];
+    $ext = strtolower(pathinfo($_FILES[$fieldName]['name'], PATHINFO_EXTENSION));
+
+    if(!in_array($ext, $allowed, true)){
+
+        return '';
+    }
+
+    $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/wowasco-system/uploads/deactivation_requests/';
+
+    if(!is_dir($uploadDir)){
+
+        mkdir($uploadDir, 0777, true);
+    }
+
+    $fileName = 'deactivation_' . date('YmdHis') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+    $target = $uploadDir . $fileName;
+
+    if(move_uploaded_file($_FILES[$fieldName]['tmp_name'], $target)){
+
+        return 'uploads/deactivation_requests/' . $fileName;
+    }
+
+    return '';
+}
+
+ensureDeactivationRequestsTable($conn);
+
 /* =========================================================
    DUPLICATE PROTECTION
 ========================================================= */
@@ -387,16 +455,56 @@ if(isset($_POST['update_asset'])){
    DEACTIVATE
 ========================================================= */
 
-if(isset($_POST['deactivate_asset'])){
+if(isset($_POST['request_deactivation_asset'])){
 
     $id = intval($_POST['asset_id'] ?? 0);
+    $reason = trim($_POST['deactivation_reason'] ?? '');
+    $notes = trim($_POST['deactivation_notes'] ?? '');
+
+    if($reason === ''){
+
+        redirectToSamePage('Please provide a reason for the deactivation request.');
+    }
+
+    $pending = $conn->prepare("
+        SELECT id
+        FROM deactivation_requests
+        WHERE item_type = 'asset'
+        AND item_id = ?
+        AND final_status IN ('Pending Check','Pending MD Approval','Returned by Checker')
+        LIMIT 1
+    ");
+
+    $pending->bind_param("i", $id);
+    $pending->execute();
+    $pending->store_result();
+
+    if($pending->num_rows > 0){
+
+        redirectToSamePage('A deactivation request for this asset is already in progress.');
+    }
+
+    $assetResult = $conn->query("SELECT asset_name, serial_number FROM assets WHERE id = $id LIMIT 1");
+    $assetRow = $assetResult ? $assetResult->fetch_assoc() : [];
+    $itemLabel = trim(($assetRow['asset_name'] ?? '') . ' - ' . ($assetRow['serial_number'] ?? ''));
+    $attachmentPath = saveDeactivationAttachment('deactivation_attachment');
+    $requesterId = (int)($_SESSION['user_id'] ?? 0);
+    $requesterName = $_SESSION['name'] ?? 'System User';
 
     $stmt = $conn->prepare("
-        UPDATE assets
-        SET
-            is_deactivated = 1,
-            status = 'Deactivated'
-        WHERE id = ?
+        INSERT INTO deactivation_requests
+        (
+            item_type,
+            item_id,
+            item_label,
+            requested_by,
+            requester_name,
+            request_reason,
+            request_notes,
+            attachment_path,
+            final_status
+        )
+        VALUES ('asset', ?, ?, ?, ?, ?, ?, ?, 'Pending Check')
     ");
 
     if(!$stmt){
@@ -404,11 +512,20 @@ if(isset($_POST['deactivate_asset'])){
         die("Prepare failed: " . $conn->error);
     }
 
-    $stmt->bind_param("i",$id);
+    $stmt->bind_param(
+        "isissss",
+        $id,
+        $itemLabel,
+        $requesterId,
+        $requesterName,
+        $reason,
+        $notes,
+        $attachmentPath
+    );
 
     if($stmt->execute()){
 
-        redirectToSamePage('Asset deactivated successfully.');
+        redirectToSamePage('Asset deactivation request submitted for checking.');
 
     }else{
 
@@ -828,23 +945,14 @@ onclick='openEditModal(
 Edit
 </button>
 
-<form
-method="POST"
-onsubmit="return confirm('Are you sure you want to deactivate this asset?');">
-
-<input
-type="hidden"
-name="asset_id"
-value="<?= htmlspecialchars($row['id'] ?? ''); ?>">
-
 <button
-type="submit"
-name="deactivate_asset"
-class="deactivate-btn">
-Deactivate
+type="button"
+class="deactivate-btn"
+onclick='openAssetDeactivationModal(
+<?= htmlspecialchars(json_encode($row), ENT_QUOTES, "UTF-8"); ?>
+)'>
+Request Deactivation
 </button>
-
-</form>
 
 <button
 type="button"
@@ -865,22 +973,13 @@ onclick='openEditModal(
 ✏ Edit Asset
 </button>
 
-<form
-method="POST"
-onsubmit="return confirm('Are you sure you want to deactivate this asset?');">
-
-<input
-type="hidden"
-name="asset_id"
-value="<?= htmlspecialchars($row['id'] ?? ''); ?>">
-
 <button
-type="submit"
-name="deactivate_asset">
-⛔ Deactivate Asset
+type="button"
+onclick='openAssetDeactivationModal(
+<?= htmlspecialchars(json_encode($row), ENT_QUOTES, "UTF-8"); ?>
+)'>
+Request Deactivation
 </button>
-
-</form>
 
 </div>
 
@@ -1255,6 +1354,94 @@ Update Asset
 
 </div>
 
+<!-- DEACTIVATION REQUEST MODAL -->
+
+<div id="assetDeactivationModal" class="modal">
+
+<div class="modal-content">
+
+<div class="modal-header">
+
+<div>
+<h3 style="margin:0;font-size:22px;color:#0f172a;">
+Request Asset Deactivation
+</h3>
+
+<p style="margin-top:6px;font-size:13px;color:#64748b;">
+Submit details for checker verification and MD approval
+</p>
+</div>
+
+<button
+type="button"
+class="close-modal"
+onclick="closeAssetDeactivationModal()">
+×
+</button>
+
+</div>
+
+<div class="modal-body">
+
+<form method="POST" enctype="multipart/form-data">
+
+<input type="hidden" name="asset_id" id="deactivation_asset_id">
+
+<div class="form-grid">
+
+<div class="form-group full">
+<label>Asset Details</label>
+<input type="text" id="deactivation_asset_label" readonly>
+</div>
+
+<div class="form-group full">
+<label>Reason for Deactivation</label>
+<select name="deactivation_reason" required>
+<option value="">-- Select Reason --</option>
+<option value="Faulty asset">Faulty asset</option>
+<option value="Asset replacement">Asset replacement</option>
+<option value="Asset retired">Asset retired</option>
+<option value="Lost or damaged asset">Lost or damaged asset</option>
+<option value="Duplicate or wrong record">Duplicate or wrong record</option>
+<option value="Other">Other</option>
+</select>
+</div>
+
+<div class="form-group full">
+<label>Verification Notes</label>
+<input
+type="text"
+name="deactivation_notes"
+placeholder="Enter supporting details for the checker and MD">
+</div>
+
+<div class="form-group full">
+<label>Supporting Photo / Document</label>
+<input
+type="file"
+name="deactivation_attachment"
+accept=".jpg,.jpeg,.png,.pdf">
+</div>
+
+<div class="form-group full">
+<button
+type="submit"
+name="request_deactivation_asset"
+class="submit-btn">
+Submit Deactivation Request
+</button>
+</div>
+
+</div>
+
+</form>
+
+</div>
+
+</div>
+
+</div>
+
 <script>
 
 $(document).ready(function(){
@@ -1358,6 +1545,20 @@ function openEditModal(data){
     document.getElementById('edit_date_purchased').value = data.date_purchased || '';
 
     setSelectValue('edit_status', data.status || 'Operational');
+}
+
+function openAssetDeactivationModal(data){
+
+    document.getElementById('deactivation_asset_id').value = data.id || '';
+    document.getElementById('deactivation_asset_label').value =
+        (data.asset_name || '') + ' - ' + (data.serial_number || 'N/A');
+
+    document.getElementById('assetDeactivationModal').style.display = 'flex';
+}
+
+function closeAssetDeactivationModal(){
+
+    document.getElementById('assetDeactivationModal').style.display = 'none';
 }
 
 /* =========================================================

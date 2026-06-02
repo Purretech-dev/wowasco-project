@@ -19,6 +19,74 @@ function columnExists($conn, $table, $column){
     return $res && $res->num_rows > 0;
 }
 
+function ensureDeactivationRequestsTable($conn){
+
+    $conn->query("
+        CREATE TABLE IF NOT EXISTS deactivation_requests (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            item_type VARCHAR(30) NOT NULL,
+            item_id INT NOT NULL,
+            item_label VARCHAR(255) NULL,
+            requested_by INT NULL,
+            requester_name VARCHAR(150) NULL,
+            request_reason TEXT NOT NULL,
+            request_notes TEXT NULL,
+            attachment_path VARCHAR(255) NULL,
+            checker_id INT NULL,
+            checker_name VARCHAR(150) NULL,
+            checker_decision VARCHAR(50) NULL,
+            checker_notes TEXT NULL,
+            checked_at DATETIME NULL,
+            approver_id INT NULL,
+            approver_name VARCHAR(150) NULL,
+            approver_decision VARCHAR(50) NULL,
+            approver_notes TEXT NULL,
+            approved_at DATETIME NULL,
+            final_status VARCHAR(80) DEFAULT 'Pending Check',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX(item_type),
+            INDEX(item_id),
+            INDEX(final_status)
+        )
+    ");
+}
+
+function saveDeactivationAttachment($fieldName){
+
+    if(empty($_FILES[$fieldName]['name']) || $_FILES[$fieldName]['error'] !== UPLOAD_ERR_OK){
+
+        return '';
+    }
+
+    $allowed = ['jpg','jpeg','png','pdf'];
+    $ext = strtolower(pathinfo($_FILES[$fieldName]['name'], PATHINFO_EXTENSION));
+
+    if(!in_array($ext, $allowed, true)){
+
+        return '';
+    }
+
+    $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/wowasco-system/uploads/deactivation_requests/';
+
+    if(!is_dir($uploadDir)){
+
+        mkdir($uploadDir, 0777, true);
+    }
+
+    $fileName = 'deactivation_' . date('YmdHis') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+    $target = $uploadDir . $fileName;
+
+    if(move_uploaded_file($_FILES[$fieldName]['tmp_name'], $target)){
+
+        return 'uploads/deactivation_requests/' . $fileName;
+    }
+
+    return '';
+}
+
+ensureDeactivationRequestsTable($conn);
+
 /* =========================================================
    CREATE DEACTIVATION COLUMN IF NOT EXISTS
 ========================================================= */
@@ -39,24 +107,89 @@ if($checkColumn->num_rows == 0){
    DEACTIVATE METER
 ========================================================= */
 
-if(isset($_POST['deactivate_meter'])){
+if(isset($_POST['request_deactivation_meter'])){
 
     $id = (int)$_POST['meter_id'];
+    $reason = trim($_POST['deactivation_reason'] ?? '');
+    $notes = trim($_POST['deactivation_notes'] ?? '');
 
-    $stmt = $conn->prepare("
-        UPDATE meters
-        SET is_deactivated = 1
-        WHERE id = ?
+    if($reason === ''){
+
+        echo "
+        <script>
+        alert('Please provide a reason for the deactivation request.');
+        window.location.href = window.location.pathname + window.location.search;
+        </script>
+        ";
+        exit;
+    }
+
+    $pending = $conn->prepare("
+        SELECT id
+        FROM deactivation_requests
+        WHERE item_type = 'meter'
+        AND item_id = ?
+        AND final_status IN ('Pending Check','Pending MD Approval','Returned by Checker')
+        LIMIT 1
     ");
 
-    $stmt->bind_param("i",$id);
-   $stmt->execute();
+    $pending->bind_param("i", $id);
+    $pending->execute();
+    $pending->store_result();
 
-echo "
-<script>
-window.location.href = window.location.pathname + window.location.search;
-</script>
-";
+    if($pending->num_rows > 0){
+
+        echo "
+        <script>
+        alert('A deactivation request for this meter is already in progress.');
+        window.location.href = window.location.pathname + window.location.search;
+        </script>
+        ";
+        exit;
+    }
+
+    $meterResult = $conn->query("SELECT serial_number, customer_name FROM meters WHERE id = $id LIMIT 1");
+    $meterRow = $meterResult ? $meterResult->fetch_assoc() : [];
+    $itemLabel = trim(($meterRow['serial_number'] ?? '') . ' - ' . ($meterRow['customer_name'] ?? ''));
+    $attachmentPath = saveDeactivationAttachment('deactivation_attachment');
+    $requesterId = (int)($_SESSION['user_id'] ?? 0);
+    $requesterName = $_SESSION['name'] ?? 'System User';
+
+    $stmt = $conn->prepare("
+        INSERT INTO deactivation_requests
+        (
+            item_type,
+            item_id,
+            item_label,
+            requested_by,
+            requester_name,
+            request_reason,
+            request_notes,
+            attachment_path,
+            final_status
+        )
+        VALUES ('meter', ?, ?, ?, ?, ?, ?, ?, 'Pending Check')
+    ");
+
+    $stmt->bind_param(
+        "isissss",
+        $id,
+        $itemLabel,
+        $requesterId,
+        $requesterName,
+        $reason,
+        $notes,
+        $attachmentPath
+    );
+
+    $stmt->execute();
+
+    echo "
+    <script>
+    alert('Meter deactivation request submitted for checking.');
+    window.location.href = window.location.pathname + window.location.search;
+    </script>
+    ";
 
 exit;
 }
@@ -1015,24 +1148,13 @@ onclick='openEditModal(
 
 </button>
 
-<form
-method="POST"
-onsubmit="return confirm('Deactivate this meter?')">
-
-<input
-type="hidden"
-name="meter_id"
-value="<?= $row['id']; ?>">
-
 <button
-type="submit"
-name="deactivate_meter">
+type="button"
+onclick='openMeterDeactivationModal(<?= json_encode($row); ?>)'>
 
-⛔ Deactivate Meter
+Request Deactivation
 
 </button>
-
-</form>
 
 </div>
 
@@ -1279,7 +1401,9 @@ id="register_serial_number"
 placeholder="Enter meter serial number"
 required>
 
-
+<small class="field-hint">
+Enter the meter serial manually. Duplicate serials are blocked automatically.
+</small>
 
 </div>
 
@@ -1443,6 +1567,101 @@ Register Meter
 
 </button>
 
+</div>
+
+</div>
+
+</form>
+
+</div>
+
+</div>
+
+</div>
+
+<!-- =========================================================
+   DEACTIVATION REQUEST MODAL
+========================================================= -->
+
+<div id="meterDeactivationModal"
+     class="modal">
+
+<div class="modal-content">
+
+<div class="modal-header">
+
+<h3>
+Request Meter Deactivation
+</h3>
+
+<button
+class="close-modal"
+onclick="closeMeterDeactivationModal()">
+
+×
+
+</button>
+
+</div>
+
+<div class="modal-body">
+
+<form method="POST" enctype="multipart/form-data">
+
+<input
+type="hidden"
+name="meter_id"
+id="deactivation_meter_id">
+
+<div class="form-grid">
+
+<div class="form-group full">
+<label>Meter Details</label>
+<input
+type="text"
+id="deactivation_meter_label"
+readonly>
+</div>
+
+<div class="form-group full">
+<label>Reason for Deactivation</label>
+<select name="deactivation_reason" required>
+<option value="">-- Select Reason --</option>
+<option value="Faulty meter">Faulty meter</option>
+<option value="Meter replacement">Meter replacement</option>
+<option value="Customer disconnected">Customer disconnected</option>
+<option value="Duplicate or wrong record">Duplicate or wrong record</option>
+<option value="Meter retired">Meter retired</option>
+<option value="Other">Other</option>
+</select>
+</div>
+
+<div class="form-group full">
+<label>Verification Notes</label>
+<input
+type="text"
+name="deactivation_notes"
+placeholder="Enter supporting details for the checker and MD">
+</div>
+
+<div class="form-group full">
+<label>Supporting Photo / Document</label>
+<input
+type="file"
+name="deactivation_attachment"
+accept=".jpg,.jpeg,.png,.pdf">
+<small class="field-hint">Accepted: JPG, PNG or PDF.</small>
+</div>
+
+<div class="form-group full">
+<button
+type="submit"
+name="request_deactivation_meter"
+class="submit-btn">
+
+Submit Deactivation Request
+
+</button>
 </div>
 
 </div>
@@ -1641,6 +1860,22 @@ function closeRegisterModal(){
     .style.display = 'none';
 }
 
+function openMeterDeactivationModal(data){
+
+    document.getElementById('deactivation_meter_id').value = data.id || '';
+    document.getElementById('deactivation_meter_label').value =
+        (data.serial_number || '') + ' - ' + (data.customer_name || 'N/A');
+
+    document.getElementById('meterDeactivationModal')
+    .style.display = 'flex';
+}
+
+function closeMeterDeactivationModal(){
+
+    document.getElementById('meterDeactivationModal')
+    .style.display = 'none';
+}
+
 /* =========================================================
    CLOSE REGISTER MODAL OUTSIDE
 ========================================================= */
@@ -1653,6 +1888,14 @@ window.addEventListener('click', function(e){
     if(e.target === registerModal){
 
         closeRegisterModal();
+    }
+
+    const meterDeactivationModal =
+    document.getElementById('meterDeactivationModal');
+
+    if(e.target === meterDeactivationModal){
+
+        closeMeterDeactivationModal();
     }
 });
 

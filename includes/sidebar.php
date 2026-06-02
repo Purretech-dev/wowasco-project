@@ -18,6 +18,7 @@ $isAssets     = isActiveModule('modules/assets');
 $isCustomer   = isActiveModule('modules/customer');
 $isZoning     = isActiveModule('modules/zoning');
 $isReports    = isActiveModule('modules/reports');
+$isApprovals  = isActiveModule('modules/approvals');
 ?>
 
 <style>
@@ -284,6 +285,15 @@ $isReports    = isActiveModule('modules/reports');
     <div id="zoningMenu" class="submenu <?= $isZoning ? 'open' : '' ?>">
         <a href="dashboard.php?page=modules/zoning/zone_management.php" class="<?= isActivePage('modules/zoning/zone_management.php') ?>">Zone Management</a>
         <a href="dashboard.php?page=modules/zoning/gis.php" class="<?= isActivePage('modules/zoning/gis.php') ?>">GIS Module</a>
+    </div>
+
+    <a href="javascript:void(0);" class="menu-toggle <?= $isApprovals ? 'active-parent' : '' ?>" data-target="approvalsMenu">
+        <span>Approval Workflow</span><span>â–¾</span>
+    </a>
+
+    <div id="approvalsMenu" class="submenu <?= $isApprovals ? 'open' : '' ?>">
+        <a href="dashboard.php?page=modules/approvals/deactivation_checker.php" class="<?= isActivePage('modules/approvals/deactivation_checker.php') ?>">Checker Workbench</a>
+        <a href="dashboard.php?page=modules/approvals/deactivation_approver.php" class="<?= isActivePage('modules/approvals/deactivation_approver.php') ?>">MD Approval</a>
     </div>
 
     <a href="javascript:void(0);" class="menu-toggle <?= $isReports ? 'active-parent' : '' ?>" data-target="reportsMenu">

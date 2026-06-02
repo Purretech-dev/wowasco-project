@@ -30,6 +30,42 @@ function tableExists($conn, $table){
     return $res && $res->num_rows > 0;
 }
 
+function columnExists($conn, $table, $column){
+    if (!tableExists($conn, $table)) return false;
+    $table = $conn->real_escape_string($table);
+    $column = $conn->real_escape_string($column);
+    $res = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$column'");
+    return $res && $res->num_rows > 0;
+}
+
+function addColumnIfMissing($conn, $table, $column, $definition){
+    if (tableExists($conn, $table) && !columnExists($conn, $table, $column)) {
+        $conn->query("ALTER TABLE `$table` ADD `$column` $definition");
+    }
+}
+
+function ensureCustomerCaseUpdatesTable($conn){
+    $conn->query("
+        CREATE TABLE IF NOT EXISTS customer_case_updates (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            case_type VARCHAR(80) NOT NULL,
+            case_id INT NOT NULL,
+            action_taken VARCHAR(150) NOT NULL,
+            old_status VARCHAR(80) NULL,
+            new_status VARCHAR(80) NULL,
+            staff_name VARCHAR(150) NULL,
+            notes TEXT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX(case_type),
+            INDEX(case_id),
+            INDEX(created_at)
+        )
+    ");
+}
+
+addColumnIfMissing($conn, 'customer_complaints', 'evidence_file', "VARCHAR(255) NULL");
+ensureCustomerCaseUpdatesTable($conn);
+
 $message = "";
 
 /* ================= SAVE METER APPLICATION ================= */
@@ -171,43 +207,77 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_enquiry'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) {
 
     $complaint_ref = generateRef('CMP');
+    $evidencePath = "";
 
-    $stmt = $conn->prepare("
-        INSERT INTO customer_complaints
-        (
-            complaint_ref,
-            customer_name,
-            contact,
-            meter_serial,
-            zone,
-            complaint_type,
-            priority,
-            description
-        )
-        VALUES (?,?,?,?,?,?,?,?)
-    ");
+    if (!empty($_FILES['complaint_evidence']['name'])) {
 
-    $stmt->bind_param(
-        "ssssssss",
-        $complaint_ref,
-        $_POST['customer_name'],
-        $_POST['contact'],
-        $_POST['meter_serial'],
-        $_POST['zone'],
-        $_POST['complaint_type'],
-        $_POST['priority'],
-        $_POST['description']
-    );
+        $allowedTypes = ['jpg', 'jpeg', 'png', 'pdf'];
+        $fileName = $_FILES['complaint_evidence']['name'];
+        $fileTmp = $_FILES['complaint_evidence']['tmp_name'];
+        $fileExt = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
 
-    if ($stmt->execute()) {
-        $message = "
-            <div class='alert-card green'>
-                <strong>Complaint submitted successfully.</strong><br>
-                Reference Number: <strong>$complaint_ref</strong>
-            </div>
-        ";
+        if (!in_array($fileExt, $allowedTypes)) {
+            $message = "<div class='alert-card red'><strong>Invalid Upload</strong><br>Complaint evidence must be JPG, JPEG, PNG or PDF.</div>";
+        } else {
+
+            $uploadDir = __DIR__ . '/../../uploads/complaint_evidence/';
+
+            if (!is_dir($uploadDir)) {
+                mkdir($uploadDir, 0777, true);
+            }
+
+            $newFileName = 'CMP_' . time() . '_' . rand(1000, 9999) . '.' . $fileExt;
+            $targetPath = $uploadDir . $newFileName;
+
+            if (move_uploaded_file($fileTmp, $targetPath)) {
+                $evidencePath = 'uploads/complaint_evidence/' . $newFileName;
+            }
+        }
+    }
+
+    if ($message !== "") {
+        $activeTab = 'complaint';
     } else {
-        $message = "<div class='alert-card red'><strong>Submission Failed</strong><br>Failed to submit complaint.</div>";
+
+        $stmt = $conn->prepare("
+            INSERT INTO customer_complaints
+            (
+                complaint_ref,
+                customer_name,
+                contact,
+                meter_serial,
+                zone,
+                complaint_type,
+                priority,
+                description,
+                evidence_file
+            )
+            VALUES (?,?,?,?,?,?,?,?,?)
+        ");
+
+        $stmt->bind_param(
+            "sssssssss",
+            $complaint_ref,
+            $_POST['customer_name'],
+            $_POST['contact'],
+            $_POST['meter_serial'],
+            $_POST['zone'],
+            $_POST['complaint_type'],
+            $_POST['priority'],
+            $_POST['description'],
+            $evidencePath
+        );
+
+        if ($stmt->execute()) {
+            $message = "
+                <div class='alert-card green'>
+                    <strong>Complaint submitted successfully.</strong><br>
+                    Reference Number: <strong>$complaint_ref</strong>
+                </div>
+            ";
+        } else {
+            $message = "<div class='alert-card red'><strong>Submission Failed</strong><br>Failed to submit complaint.</div>";
+        }
     }
 }
 
@@ -215,25 +285,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
 
 $trackingResult = null;
 $trackingType = "";
+$trackingUpdates = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['track_request'])) {
 
     $reference = trim($_POST['reference_number']);
+    $caseTypeForAudit = '';
 
     if (str_starts_with($reference, 'MTRAPP')) {
         $stmt = $conn->prepare("SELECT * FROM meter_applications WHERE application_ref=? LIMIT 1");
         $trackingType = "Meter Application";
+        $caseTypeForAudit = "Meter Application";
     } elseif (str_starts_with($reference, 'ENQ')) {
         $stmt = $conn->prepare("SELECT * FROM customer_enquiries WHERE enquiry_ref=? LIMIT 1");
         $trackingType = "Enquiry";
+        $caseTypeForAudit = "Enquiry";
     } else {
         $stmt = $conn->prepare("SELECT * FROM customer_complaints WHERE complaint_ref=? LIMIT 1");
         $trackingType = "Complaint";
+        $caseTypeForAudit = "Complaint";
     }
 
     $stmt->bind_param("s", $reference);
     $stmt->execute();
     $trackingResult = $stmt->get_result()->fetch_assoc();
+
+    if ($trackingResult && tableExists($conn, 'customer_case_updates')) {
+        $caseId = (int)$trackingResult['id'];
+        $updatesStmt = $conn->prepare("
+            SELECT *
+            FROM customer_case_updates
+            WHERE case_type = ?
+            AND case_id = ?
+            ORDER BY created_at ASC, id ASC
+        ");
+
+        if ($updatesStmt) {
+            $updatesStmt->bind_param("si", $caseTypeForAudit, $caseId);
+            $updatesStmt->execute();
+            $updatesResult = $updatesStmt->get_result();
+
+            while ($update = $updatesResult->fetch_assoc()) {
+                $trackingUpdates[] = $update;
+            }
+        }
+    }
 }
 
 /* ================= CUSTOMER LOOKUP ================= */
@@ -531,7 +627,7 @@ if (isset($_POST['submit_enquiry'])) {
                     Submit general enquiries about billing, water supply, meter application, sewerage or connection process.
                 </div>
 
-                <form method="POST" class="form-card">
+                <form method="POST" enctype="multipart/form-data" class="form-card">
 
                     <div class="form-grid">
 
@@ -591,7 +687,7 @@ if (isset($_POST['submit_enquiry'])) {
                     Existing customers can report supply interruptions, billing issues, meter faults, wrong readings, leakages or sewerage issues.
                 </div>
 
-                <form method="POST" class="form-card">
+                <form method="POST" enctype="multipart/form-data" class="form-card">
 
                     <div class="form-grid">
 
@@ -643,6 +739,12 @@ if (isset($_POST['submit_enquiry'])) {
                         <div class="form-group full-width">
                             <label>Description</label>
                             <textarea name="description" required></textarea>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label>Upload Evidence Photo / Document</label>
+                            <input type="file" name="complaint_evidence" accept=".jpg,.jpeg,.png,.pdf">
+                            <small>Optional. Allowed formats: JPG, JPEG, PNG, PDF.</small>
                         </div>
 
                     </div>
@@ -826,30 +928,78 @@ if (isset($_POST['submit_enquiry'])) {
 
                 <?php if (isset($_POST['track_request'])): ?>
 
-                    <div class="insight-box">
+                    <div class="tracking-panel">
 
                         <?php if ($trackingResult): ?>
 
-                            <strong><?= clean($trackingType) ?> Status</strong><br><br>
+                            <div class="tracking-summary">
+                                <div>
+                                    <span>Request Type</span>
+                                    <strong><?= clean($trackingType) ?></strong>
+                                </div>
 
-                            Status:
-                            <span class="badge good"><?= clean($trackingResult['status'] ?? '') ?></span>
+                                <div>
+                                    <span>Current Status</span>
+                                    <strong><span class="badge good"><?= clean($trackingResult['status'] ?? 'Submitted') ?></span></strong>
+                                </div>
 
-                            <br><br>
+                                <div>
+                                    <span>Date Submitted</span>
+                                    <strong><?= clean($trackingResult['created_at'] ?? '') ?></strong>
+                                </div>
+                            </div>
 
                             <?php if (!empty($trackingResult['response'])): ?>
-                                <strong>Response:</strong> <?= clean($trackingResult['response']) ?><br><br>
+                                <div class="tracking-note">
+                                    <strong>Latest Response</strong>
+                                    <p><?= clean($trackingResult['response']) ?></p>
+                                </div>
                             <?php endif; ?>
 
                             <?php if (!empty($trackingResult['remarks'])): ?>
-                                <strong>Remarks:</strong> <?= clean($trackingResult['remarks']) ?><br><br>
+                                <div class="tracking-note">
+                                    <strong>Remarks</strong>
+                                    <p><?= clean($trackingResult['remarks']) ?></p>
+                                </div>
                             <?php endif; ?>
 
-                            <strong>Date Submitted:</strong> <?= clean($trackingResult['created_at'] ?? '') ?>
+                            <div class="tracking-timeline">
+                                <h4>Request Movement</h4>
+
+                                <div class="timeline-item">
+                                    <strong>Submitted</strong>
+                                    <span><?= clean($trackingResult['created_at'] ?? '') ?></span>
+                                    <p>Your request was received by WOWASCO.</p>
+                                </div>
+
+                                <?php foreach ($trackingUpdates as $update): ?>
+                                    <div class="timeline-item">
+                                        <strong><?= clean($update['action_taken']) ?></strong>
+                                        <span><?= clean($update['created_at']) ?></span>
+                                        <p>
+                                            Status: <?= clean($update['old_status'] ?: 'New') ?>
+                                            &rarr;
+                                            <?= clean($update['new_status']) ?>
+                                        </p>
+
+                                        <?php if (!empty($update['notes'])): ?>
+                                            <p><?= clean($update['notes']) ?></p>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endforeach; ?>
+
+                                <?php if (empty($trackingUpdates)): ?>
+                                    <div class="timeline-item">
+                                        <strong>Awaiting Review</strong>
+                                        <span>Current stage</span>
+                                        <p>No staff action has been recorded yet.</p>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
 
                         <?php else: ?>
 
-                            No request found with that reference number.
+                            <div class="empty-result">No request found with that reference number.</div>
 
                         <?php endif; ?>
 
@@ -1181,6 +1331,88 @@ tr:hover td{
     font-size:13px;
     padding:14px;
     margin-top:14px;
+}
+
+.tracking-panel{
+    background:#fff;
+    border:1px solid #e2e8f0;
+    border-radius:14px;
+    padding:16px;
+    margin-top:14px;
+}
+
+.tracking-summary{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:10px;
+}
+
+.tracking-summary div{
+    background:#f8fafc;
+    border:1px solid #eef2f7;
+    border-radius:10px;
+    padding:10px;
+}
+
+.tracking-summary span{
+    display:block;
+    color:#64748b;
+    font-size:12px;
+    margin-bottom:4px;
+}
+
+.tracking-summary strong{
+    color:#1e293b;
+    font-size:13px;
+}
+
+.tracking-note{
+    margin-top:12px;
+    padding-top:12px;
+    border-top:1px solid #eef2f7;
+}
+
+.tracking-note strong,
+.tracking-timeline h4{
+    color:#0f172a;
+    font-size:14px;
+}
+
+.tracking-note p{
+    margin:6px 0 0;
+    color:#475569;
+    font-size:13px;
+    line-height:1.6;
+}
+
+.tracking-timeline{
+    margin-top:16px;
+}
+
+.timeline-item{
+    border-left:3px solid #1e7d4f;
+    padding:0 0 14px 14px;
+    margin-top:12px;
+}
+
+.timeline-item strong{
+    display:block;
+    color:#0f172a;
+    font-size:13px;
+}
+
+.timeline-item span{
+    display:block;
+    color:#64748b;
+    font-size:12px;
+    margin-top:3px;
+}
+
+.timeline-item p{
+    margin:6px 0 0;
+    color:#475569;
+    font-size:13px;
+    line-height:1.5;
 }
 
 .alert-card{
