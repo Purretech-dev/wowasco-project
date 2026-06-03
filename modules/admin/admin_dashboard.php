@@ -1,7 +1,7 @@
 <?php
-session_start();
+require_once __DIR__ . '/../../includes/auth_guard.php';
 
-if ($_SESSION['role'] !== 'super_admin') {
+if (($_SESSION['role'] ?? '') !== 'super_admin') {
     die("Access denied");
 }
 ?>

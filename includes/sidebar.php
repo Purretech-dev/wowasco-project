@@ -1,24 +1,117 @@
 <?php
+require_once __DIR__ . '/auth_guard.php';
+
 $page = $_GET['page'] ?? 'modules/home.php';
 
-function isActivePage($target){
-    global $page;
-    return $page === $target ? 'active' : '';
+if (!function_exists('isActivePage')) {
+    function isActivePage($target){
+        global $page;
+        return $page === $target ? 'active' : '';
+    }
 }
 
-function isActiveModule($keyword){
-    global $page;
-    return stripos($page, $keyword) !== false;
+if (!function_exists('isActiveModule')) {
+    function isActiveModule($keyword){
+        global $page;
+        return stripos($page, $keyword) !== false;
+    }
 }
 
-$isHome       = ($page === 'modules/home.php');
-$isMetering   = isActiveModule('modules/metering');
-$isProduction = isActiveModule('modules/production');
-$isAssets     = isActiveModule('modules/assets');
-$isCustomer   = isActiveModule('modules/customer');
-$isZoning     = isActiveModule('modules/zoning');
-$isReports    = isActiveModule('modules/reports');
-$isApprovals  = isActiveModule('modules/approvals');
+if (!function_exists('canAccessPage')) {
+    function canAccessPage($target){
+        $role = $_SESSION['role'] ?? 'customer';
+        $role = $role === 'admin' ? 'super_admin' : $role;
+
+        if ($role === 'super_admin') {
+            return true;
+        }
+
+        if ($role === 'customer') {
+            return $target === 'modules/customer/customer_portal.php';
+        }
+
+        $allowedPages = $_SESSION['allowed_pages'] ?? [];
+        $allowedPages = is_array($allowedPages) ? $allowedPages : [];
+
+        return $target === 'modules/home.php' || in_array($target, $allowedPages, true);
+    }
+}
+
+if (!function_exists('canAccessAnyPage')) {
+    function canAccessAnyPage($targets){
+        foreach ($targets as $target) {
+            if (canAccessPage($target)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
+$menus = [
+    'meteringMenu' => [
+        'title' => 'Metering Module',
+        'active' => isActiveModule('modules/metering'),
+        'pages' => [
+            'modules/metering/meter_management.php' => 'Meter Management',
+            'modules/metering/meter_dashboard.php' => 'Meter Dashboard',
+            'modules/metering/meter_alerts.php' => 'Meter Alerts'
+        ]
+    ],
+    'productionMenu' => [
+        'title' => 'Production Module',
+        'active' => isActiveModule('modules/production'),
+        'pages' => [
+            'modules/production/pumped_volume.php' => 'Pumped Volume',
+            'modules/production/production_comparison.php' => 'Production Comparison'
+        ]
+    ],
+    'assetsMenu' => [
+        'title' => 'Assets Module',
+        'active' => isActiveModule('modules/Assets'),
+        'pages' => [
+            'modules/Assets/asset_management.php' => 'Asset Management',
+            'modules/Assets/asset_maintenance.php' => 'Asset Maintenance'
+        ]
+    ],
+    'customerMenu' => [
+        'title' => 'Customer Relations',
+        'active' => isActiveModule('modules/customer'),
+        'pages' => [
+            'modules/customer/customer_portal.php' => 'Customer Portal',
+            'modules/customer/customer_management.php' => 'Customer Management'
+        ]
+    ],
+    'zoningMenu' => [
+        'title' => 'Zoning & GIS',
+        'active' => isActiveModule('modules/zoning'),
+        'pages' => [
+            'modules/zoning/zone_management.php' => 'Zone Management',
+            'modules/zoning/gis.php' => 'GIS Module'
+        ]
+    ],
+    'approvalsMenu' => [
+        'title' => 'Approval Workflow',
+        'active' => isActiveModule('modules/approvals'),
+        'pages' => [
+            'modules/approvals/deactivation_checker.php' => 'Checker Workbench',
+            'modules/approvals/deactivation_approver.php' => 'MD Approval'
+        ]
+    ],
+    'reportsMenu' => [
+        'title' => 'Advanced Reports',
+        'active' => isActiveModule('modules/reports'),
+        'pages' => [
+            'modules/reports/md_dashboard.php' => 'Report Dashboard',
+            'modules/reports/metering_reports.php' => 'Meter Reports',
+            'modules/reports/production_reports.php' => 'Production Reports',
+            'modules/reports/asset_reports.php' => 'Asset Reports',
+            'modules/reports/customer_reports.php' => 'Customer Reports',
+            'modules/reports/zoning_reports.php' => 'Zoning Reports'
+        ]
+    ]
+];
 ?>
 
 <style>
@@ -216,7 +309,7 @@ $isApprovals  = isActiveModule('modules/approvals');
     <div class="brand">
         <div class="logo-wrapper">
             <div class="logo-column">
-                <img src="assets/images/logo1.png" class="logo-img">
+                <img src="assets/images/logo1.png" class="logo-img" alt="WOWASCO logo">
             </div>
 
             <div class="vertical-divider">
@@ -228,7 +321,7 @@ $isApprovals  = isActiveModule('modules/approvals');
             </div>
 
             <div class="logo-column">
-                <img src="assets/images/logo2.png" class="logo-img">
+                <img src="assets/images/logo2.png" class="logo-img" alt="WOWASCO logo">
             </div>
         </div>
 
@@ -237,77 +330,28 @@ $isApprovals  = isActiveModule('modules/approvals');
         </div>
     </div>
 
-    <a href="dashboard.php?page=modules/home.php" class="<?= $isHome ? 'active' : '' ?>">
-        <span>Dashboard</span>
-    </a>
+    <?php if (canAccessPage('modules/home.php')): ?>
+        <a href="dashboard.php?page=modules/home.php" class="<?= $page === 'modules/home.php' ? 'active' : '' ?>">
+            <span>Dashboard</span>
+        </a>
+    <?php endif; ?>
 
-    <a href="javascript:void(0);" class="menu-toggle <?= $isMetering ? 'active-parent' : '' ?>" data-target="meteringMenu">
-        <span>Metering Module</span><span>▾</span>
-    </a>
+    <?php foreach ($menus as $menuId => $menu): ?>
+        <?php if (!canAccessAnyPage(array_keys($menu['pages']))) continue; ?>
 
-    <div id="meteringMenu" class="submenu <?= $isMetering ? 'open' : '' ?>">
-        <a href="dashboard.php?page=modules/metering/meter_management.php" class="<?= isActivePage('modules/metering/meter_management.php') ?>">Meter Management</a>
-        <a href="dashboard.php?page=modules/metering/meter_dashboard.php" class="<?= isActivePage('modules/metering/meter_dashboard.php') ?>">Meter Dashboard</a>
-        <a href="dashboard.php?page=modules/metering/meter_alerts.php" class="<?= isActivePage('modules/metering/meter_alerts.php') ?>">Meter Alerts</a>
-    </div>
+        <a href="javascript:void(0);" class="menu-toggle <?= $menu['active'] ? 'active-parent' : '' ?>" data-target="<?= htmlspecialchars($menuId, ENT_QUOTES, 'UTF-8') ?>">
+            <span><?= htmlspecialchars($menu['title'], ENT_QUOTES, 'UTF-8') ?></span><span>v</span>
+        </a>
 
-    <a href="javascript:void(0);" class="menu-toggle <?= $isProduction ? 'active-parent' : '' ?>" data-target="productionMenu">
-        <span>Production Module</span><span>▾</span>
-    </a>
-
-    <div id="productionMenu" class="submenu <?= $isProduction ? 'open' : '' ?>">
-        <a href="dashboard.php?page=modules/production/pumped_volume.php" class="<?= isActivePage('modules/production/pumped_volume.php') ?>">Pumped Volume</a>
-        <a href="dashboard.php?page=modules/production/production_comparison.php" class="<?= isActivePage('modules/production/production_comparison.php') ?>">Production Comparison</a>
-    </div>
-
-    <a href="javascript:void(0);" class="menu-toggle <?= $isAssets ? 'active-parent' : '' ?>" data-target="assetsMenu">
-        <span>Assets Module</span><span>▾</span>
-    </a>
-
-    <div id="assetsMenu" class="submenu <?= $isAssets ? 'open' : '' ?>">
-        <a href="dashboard.php?page=modules/assets/asset_management.php" class="<?= isActivePage('modules/assets/asset_management.php') ?>">Asset Management</a>
-        <a href="dashboard.php?page=modules/assets/asset_maintenance.php" class="<?= isActivePage('modules/assets/asset_maintenance.php') ?>">Asset Maintenance</a>
-    </div>
-
-    <a href="javascript:void(0);" class="menu-toggle <?= $isCustomer ? 'active-parent' : '' ?>" data-target="customerMenu">
-        <span>Customer Relations</span><span>▾</span>
-    </a>
-
-    <div id="customerMenu" class="submenu <?= $isCustomer ? 'open' : '' ?>">
-        <a href="dashboard.php?page=modules/customer/customer_portal.php" class="<?= isActivePage('modules/customer/customer_portal.php') ?>">Customer Portal</a>
-        <a href="dashboard.php?page=modules/customer/customer_management.php" class="<?= isActivePage('modules/customer/customer_management.php') ?>">Customer Management</a>
-    </div>
-
-    <a href="javascript:void(0);" class="menu-toggle <?= $isZoning ? 'active-parent' : '' ?>" data-target="zoningMenu">
-        <span>Zoning & GIS</span><span>▾</span>
-    </a>
-
-    <div id="zoningMenu" class="submenu <?= $isZoning ? 'open' : '' ?>">
-        <a href="dashboard.php?page=modules/zoning/zone_management.php" class="<?= isActivePage('modules/zoning/zone_management.php') ?>">Zone Management</a>
-        <a href="dashboard.php?page=modules/zoning/gis.php" class="<?= isActivePage('modules/zoning/gis.php') ?>">GIS Module</a>
-    </div>
-
-    <a href="javascript:void(0);" class="menu-toggle <?= $isApprovals ? 'active-parent' : '' ?>" data-target="approvalsMenu">
-        <span>Approval Workflow</span><span>â–¾</span>
-    </a>
-
-    <div id="approvalsMenu" class="submenu <?= $isApprovals ? 'open' : '' ?>">
-        <a href="dashboard.php?page=modules/approvals/deactivation_checker.php" class="<?= isActivePage('modules/approvals/deactivation_checker.php') ?>">Checker Workbench</a>
-        <a href="dashboard.php?page=modules/approvals/deactivation_approver.php" class="<?= isActivePage('modules/approvals/deactivation_approver.php') ?>">MD Approval</a>
-    </div>
-
-    <a href="javascript:void(0);" class="menu-toggle <?= $isReports ? 'active-parent' : '' ?>" data-target="reportsMenu">
-        <span>Advanced Reports</span><span>▾</span>
-    </a>
-
-    <div id="reportsMenu" class="submenu <?= $isReports ? 'open' : '' ?>">
-        <a href="dashboard.php?page=modules/reports/md_dashboard.php" class="<?= isActivePage('modules/reports/md_dashboard.php') ?>">Report Dashboard</a>
-        <a href="dashboard.php?page=modules/reports/metering_reports.php" class="<?= isActivePage('modules/reports/metering_reports.php') ?>">Meter Reports</a>
-        <a href="dashboard.php?page=modules/reports/production_reports.php" class="<?= isActivePage('modules/reports/production_reports.php') ?>">Production Reports</a>
-        <a href="dashboard.php?page=modules/reports/asset_reports.php" class="<?= isActivePage('modules/reports/asset_reports.php') ?>">Asset Reports</a>
-        <a href="dashboard.php?page=modules/reports/customer_reports.php" class="<?= isActivePage('modules/reports/customer_reports.php') ?>">Customer Reports</a>
-        <a href="dashboard.php?page=modules/reports/zoning_reports.php" class="<?= isActivePage('modules/reports/zoning_reports.php') ?>">Zoning Reports</a>
-    </div>
+        <div id="<?= htmlspecialchars($menuId, ENT_QUOTES, 'UTF-8') ?>" class="submenu <?= $menu['active'] ? 'open' : '' ?>">
+            <?php foreach ($menu['pages'] as $target => $label): ?>
+                <?php if (!canAccessPage($target)) continue; ?>
+                <a href="dashboard.php?page=<?= htmlspecialchars($target, ENT_QUOTES, 'UTF-8') ?>" class="<?= isActivePage($target) ?>">
+                    <?= htmlspecialchars($label, ENT_QUOTES, 'UTF-8') ?>
+                </a>
+            <?php endforeach; ?>
+        </div>
+    <?php endforeach; ?>
 
     <?php if (($_SESSION['role'] ?? '') === 'super_admin'): ?>
         <a href="dashboard.php?page=modules/admin/user_management.php" class="<?= isActivePage('modules/admin/user_management.php') ?>">
@@ -329,7 +373,9 @@ function initSidebar(){
                 }
             });
 
-            targetMenu.classList.toggle("open");
+            if(targetMenu){
+                targetMenu.classList.toggle("open");
+            }
         };
     });
 }

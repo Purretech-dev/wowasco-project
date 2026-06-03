@@ -24,6 +24,10 @@ if (tableExists($conn, 'users') && columnExists($conn, 'users', 'role')) {
     $conn->query("ALTER TABLE users MODIFY role VARCHAR(50) NOT NULL DEFAULT 'customer'");
 }
 
+if (tableExists($conn, 'users') && !columnExists($conn, 'users', 'allowed_pages')) {
+    $conn->query("ALTER TABLE users ADD allowed_pages TEXT NULL");
+}
+
 if (isset($_SESSION['user_id'])) {
     header("Location: ../dashboard.php");
     exit;
@@ -51,6 +55,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $_SESSION['role'] = $role;
         $_SESSION['customer_id'] = $user['customer_id'] ?? null;
+        $_SESSION['allowed_pages'] = [];
+
+        if (!empty($user['allowed_pages'])) {
+            $decodedPages = json_decode($user['allowed_pages'], true);
+            $_SESSION['allowed_pages'] = is_array($decodedPages) ? $decodedPages : [];
+        }
 
         header("Location: ../dashboard.php");
         exit;

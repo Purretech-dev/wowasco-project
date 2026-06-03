@@ -1,21 +1,10 @@
 <?php
-session_start();
+require_once __DIR__ . '/includes/auth_guard.php';
 include __DIR__ . '/includes/config.php';
-
-if (!isset($_SESSION['user_id'])) {
-    header("Location: auth/login.php");
-    exit;
-}
 
 $userRole = $_SESSION['role'] ?? 'customer';
 $userRole = $userRole === 'admin' ? 'super_admin' : $userRole;
 $_SESSION['role'] = $userRole;
-
-if (!in_array($userRole, ['super_admin', 'customer'], true)) {
-    session_destroy();
-    header("Location: auth/login.php");
-    exit;
-}
 
 $isCustomerUser = ($userRole === 'customer');
 
@@ -50,8 +39,8 @@ $allowed_pages = [
     'modules/production/production_comparison.php',
 
     // ASSETS MODULE (future-safe)
-    'modules/assets/asset_management.php',
-    'modules/assets/asset_maintenance.php',
+    'modules/Assets/asset_management.php',
+    'modules/Assets/asset_maintenance.php',
 
     // APPROVAL WORKFLOW
     'modules/approvals/deactivation_checker.php',
@@ -80,13 +69,21 @@ if ($isCustomerUser) {
     ];
 
     $page = 'modules/customer/customer_portal.php';
+} elseif ($userRole !== 'super_admin') {
+    $assignedPages = $_SESSION['allowed_pages'] ?? [];
+    $assignedPages = is_array($assignedPages) ? $assignedPages : [];
+    $assignedPages = array_values(array_intersect($assignedPages, $allowed_pages));
+
+    $allowed_pages = array_values(array_unique(array_merge([
+        'modules/home.php'
+    ], $assignedPages)));
 }
 
 /* =========================
    SECURITY CHECK
 ========================= */
 if (!in_array($page, $allowed_pages)) {
-    $page = 'modules/home.php';
+    $page = $allowed_pages[0] ?? 'modules/home.php';
 }
 
 /* =========================
@@ -112,6 +109,7 @@ $current_page = basename($page);
 
     <!-- GLOBAL CSS -->
     <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="stylesheet" href="assets/css/responsive.css">
 
     <!-- CHARTS (GLOBAL ONLY ONCE) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -229,6 +227,14 @@ document.body.classList.add('customer-shell');
 
 <?php else: ?>
 
+<button type="button" class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Open navigation">
+    <span></span>
+    <span></span>
+    <span></span>
+</button>
+
+<div class="mobile-sidebar-backdrop" id="mobileSidebarBackdrop"></div>
+
 <!-- =========================
    SIDEBAR (ALWAYS FIXED)
 ========================= -->
@@ -253,6 +259,36 @@ document.body.classList.add('customer-shell');
    FOOTER (ALWAYS FIXED)
 ========================= -->
 <?php include __DIR__ . '/includes/footer.php'; ?>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+    const menuButton = document.getElementById('mobileMenuBtn');
+    const backdrop = document.getElementById('mobileSidebarBackdrop');
+    const sidebar = document.querySelector('.sidebar');
+
+    function closeMobileMenu(){
+        document.body.classList.remove('sidebar-open');
+    }
+
+    if(menuButton && sidebar){
+        menuButton.addEventListener('click', function(){
+            document.body.classList.toggle('sidebar-open');
+        });
+    }
+
+    if(backdrop){
+        backdrop.addEventListener('click', closeMobileMenu);
+    }
+
+    document.querySelectorAll('.sidebar a[href]').forEach(function(link){
+        link.addEventListener('click', function(){
+            if(window.innerWidth <= 1024 && link.getAttribute('href') !== 'javascript:void(0);'){
+                closeMobileMenu();
+            }
+        });
+    });
+});
+</script>
 
 <?php endif; ?>
 
